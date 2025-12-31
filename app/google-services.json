@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "859046868812",
+    "project_id": "social-media-ready",
+    "storage_bucket": "social-media-ready.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:859046868812:android:a22f64a4136355ef3a01e9",
+        "android_client_info": {
+          "package_name": "com.yamdimologi.social_media_ready"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "859046868812-tsr0g2vaa1okbuuraoul0ij7pa14eilq.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAyhKWwMVAoyyMnW28SF_LNq7_7sL35qZI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "859046868812-tsr0g2vaa1okbuuraoul0ij7pa14eilq.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

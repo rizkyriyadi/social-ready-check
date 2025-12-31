@@ -1,0 +1,72 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- Helper Functions ---
+    
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if user is accessing their own document
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Users Collection
+    // Public read mainly for profile viewing, but write restricted to owner
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId);
+
+      // Friends Subcollection
+      // Allow owner to write, OR allow other user to add/remove themselves
+      match /friends/{friendId} {
+        allow read: if isAuthenticated();
+        // Owner can do anything with their friends list
+        allow write: if isOwner(userId);
+        // A user can add/remove THEMSELVES from another user's friends list
+        // This is needed for reciprocal friend additions/removals
+        allow create, delete: if isAuthenticated() && request.auth.uid == friendId;
+      }
+      
+      // Circles Subcollection
+      match /circles/{circleId} {
+        allow read: if isAuthenticated();
+        allow write: if isOwner(userId);
+      }
+    }
+
+    // Usernames Collection (for Uniqueness)
+    // Document ID is the username itself
+    match /usernames/{username} {
+      // Anyone can read to check availability
+      allow read: if true;
+      
+      // Only create if the stored uid matches the authenticated user
+      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+      
+      // Only delete if the stored uid matches the requester (e.g. changing username)
+      allow delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
+      
+      // Prevent updating someone else's username claim
+      allow update: if false; 
+    }
+
+    // Friend Requests
+    match /friend_requests/{requestId} {
+      // Allow read if user is sender or receiver
+      allow read: if isAuthenticated() && 
+        (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid);
+      
+      // Allow create if sender is the authenticated user
+      allow create: if isAuthenticated() && request.resource.data.senderId == request.auth.uid;
+      
+      // Allow update (accept/reject) if user is involved
+      allow update: if isAuthenticated() && 
+        (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid);
+    }
+  }
+}
