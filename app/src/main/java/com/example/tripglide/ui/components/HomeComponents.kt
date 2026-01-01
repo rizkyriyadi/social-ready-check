@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
@@ -27,7 +28,8 @@ import com.example.tripglide.ui.theme.White
 fun TopBar(
     userName: String,
     avatarUrl: String,
-    onAvatarClick: () -> Unit
+    onAvatarClick: () -> Unit,
+    onAddClick: (() -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -48,18 +50,37 @@ fun TopBar(
                 color = Color.Gray
             )
         }
-        Image(
-            painter = rememberAsyncImagePainter(
-                model = avatarUrl.ifEmpty { "https://i.pravatar.cc/300" }
-            ),
-            contentDescription = "Avatar",
-            modifier = Modifier
-                .size(48.dp)
-                .clip(CircleShape)
-                .background(Color.LightGray)
-                .clickable { onAvatarClick() },
-            contentScale = ContentScale.Crop
-        )
+        
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (onAddClick != null) {
+                IconButton(
+                    onClick = onAddClick,
+                    modifier = Modifier
+                        .padding(end = 8.dp)
+                        .background(Color.Transparent) // Clean look
+                ) {
+                    Icon(
+                        Icons.Default.Add, 
+                        contentDescription = "Create Squad", 
+                        tint = Black,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            }
+            
+            Image(
+                painter = rememberAsyncImagePainter(
+                    model = avatarUrl.ifEmpty { "https://i.pravatar.cc/300" }
+                ),
+                contentDescription = "Avatar",
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(Color.LightGray)
+                    .clickable { onAvatarClick() },
+                contentScale = ContentScale.Crop
+            )
+        }
     }
 }
 

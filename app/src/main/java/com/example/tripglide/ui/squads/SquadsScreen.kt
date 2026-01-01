@@ -1,4 +1,4 @@
-package com.example.tripglide.ui.home
+package com.example.tripglide.ui.squads
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Star
@@ -26,14 +27,17 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.rememberAsyncImagePainter
 import com.example.tripglide.data.model.Circle
-import com.example.tripglide.ui.components.BottomNavBar
 import com.example.tripglide.ui.components.CategorySingleChip
 import com.example.tripglide.ui.components.SearchBar
 import com.example.tripglide.ui.components.TopBar
+import com.example.tripglide.ui.home.HomeUiState
+import com.example.tripglide.ui.home.HomeViewModel
+import com.example.tripglide.ui.home.HomeViewModelFactory
+import com.example.tripglide.ui.home.CreateCircleUiState
 import com.example.tripglide.ui.theme.Black
 import com.example.tripglide.ui.theme.White
 
-// Mapping for Game Wallpapers
+// Mapping for Game Wallpapers (Copied from HomeScreen)
 private fun getGameWallpaper(game: String): String {
     return when (game.lowercase()) {
         "dota 2" -> "https://cdn.akamai.steamstatic.com/apps/dota2/images/dota2_social_share_default.jpg"
@@ -43,55 +47,95 @@ private fun getGameWallpaper(game: String): String {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(
-    onTripClick: () -> Unit,
-    onProfileClick: () -> Unit,
-    onNavigateToOnboarding: () -> Unit
+fun SquadsScreen(
+    onCircleClick: (String) -> Unit
 ) {
     val context = LocalContext.current
     val viewModel: HomeViewModel = viewModel(
         factory = HomeViewModelFactory(context)
     )
-    val userState by viewModel.user.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val selectedFilter by viewModel.selectedFilter.collectAsState()
-    val shouldNavigate by viewModel.shouldNavigateToOnboarding.collectAsState()
+    val creationState by viewModel.creationState.collectAsState()
     
-    LaunchedEffect(shouldNavigate) {
-        if (shouldNavigate) {
-            onNavigateToOnboarding()
-            viewModel.onOnboardingNavigationHandled()
+    // Sheet State
+    var showSheet by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState()
+    
+    // Handle Creation Success
+    LaunchedEffect(creationState) {
+        if (creationState is CreateCircleUiState.Success) {
+            showSheet = false
+            viewModel.resetCreationState()
+        }
+    }
+
+    if (showSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showSheet = false },
+            sheetState = sheetState
+        ) {
+            CreateCircleSheet(
+                onDismiss = { showSheet = false },
+                onCreate = { name, game ->
+                    viewModel.createCircle(name, game)
+                },
+                isLoading = creationState is CreateCircleUiState.Loading
+            )
         }
     }
 
     Scaffold(
-        bottomBar = { BottomNavBar() },
         containerColor = Color(0xFFF5F5F5)
+        // No BottomBar here, it's handled by MainScreen
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Top Scrollable Section (Non-list content)
-            // We use a LazyColumn to hold everything so it scrolls nicely together
+            // Main List
             LazyColumn(
-                contentPadding = PaddingValues(bottom = 100.dp), // Clearance for bottom bar
-                verticalArrangement = Arrangement.spacedBy(24.dp)
+                contentPadding = PaddingValues(bottom = 100.dp),
+                verticalArrangement = Arrangement.spacedBy(24.dp),
+                modifier = Modifier.fillMaxSize()
             ) {
-                // Header Item
+                // Header Item (TopBar + Search + Filter)
                 item {
                     Column {
-                        TopBar(
-                            userName = userState?.displayName ?: "Traveler",
-                            avatarUrl = userState?.photoUrl ?: "",
-                            onAvatarClick = onProfileClick
-                        )
+                        // Custom Header for Squads (No Greeting)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp, vertical = 16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "My Squads",
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                color = Black
+                            )
+                            
+                            // Add Button
+                            IconButton(
+                                onClick = { showSheet = true },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .background(White)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = "Create Squad", tint = Black)
+                            }
+                        }
                         
                         SearchBar()
                         
                         Spacer(modifier = Modifier.height(24.dp))
+
                         
                         Text(
                             text = "Select your Squad",
@@ -147,18 +191,30 @@ fun HomeScreen(
                     }
                     is HomeUiState.Success -> {
                         if (state.circles.isEmpty()) {
+                            // Large Empty State CTA
                             item {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(24.dp),
+                                        .padding(horizontal = 24.dp, vertical = 48.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Text(
-                                        text = "No squads found",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = Color.Gray
-                                    )
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(
+                                            text = "No squads found yet.",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = Color.Gray
+                                        )
+                                        Spacer(modifier = Modifier.height(24.dp))
+                                        Button(
+                                            onClick = { showSheet = true },
+                                            shape = RoundedCornerShape(16.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Black),
+                                            modifier = Modifier.fillMaxWidth().height(56.dp)
+                                        ) {
+                                            Text("Create Your First Squad", style = MaterialTheme.typography.titleMedium)
+                                        }
+                                    }
                                 }
                             }
                         } else {
@@ -166,10 +222,10 @@ fun HomeScreen(
                                 CircleCard(
                                     title = circle.name,
                                     subtitle = circle.game,
-                                    statusText = "${circle.metadata.memberCount}/5 Online", // Mock status
+                                    statusText = "${circle.metadata.memberCount}/5 Online",
                                     imageUrl = getGameWallpaper(circle.game),
                                     modifier = Modifier.padding(horizontal = 24.dp),
-                                    onClick = onTripClick // Redirect to detail
+                                    onClick = { onCircleClick(circle.id) }
                                 )
                             }
                         }
@@ -180,7 +236,6 @@ fun HomeScreen(
     }
 }
 
-// Replicated TripCard style but adapted for Circles
 @Composable
 private fun CircleCard(
     title: String,
@@ -193,7 +248,7 @@ private fun CircleCard(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(400.dp) // Keep large height
+            .height(400.dp) 
             .clip(RoundedCornerShape(32.dp))
             .background(Color.LightGray)
             .clickable(onClick = onClick)
@@ -216,14 +271,14 @@ private fun CircleCard(
                 )
         )
 
-        // Heart Icon (Keep aesthetics)
+        // Heart Icon
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(16.dp)
                 .size(40.dp)
                 .clip(CircleShape)
-                .background(White.copy(alpha = 0.2f)), // Glassmorphism-ish
+                .background(White.copy(alpha = 0.2f)),
             contentAlignment = Alignment.Center
         ) {
             Icon(Icons.Default.FavoriteBorder, contentDescription = "Like", tint = White)
@@ -250,7 +305,6 @@ private fun CircleCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Star, contentDescription = null, tint = White, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                // Status Text instead of Rating + Reviews
                 Text(text = statusText, color = White, style = MaterialTheme.typography.bodySmall)
             }
         }

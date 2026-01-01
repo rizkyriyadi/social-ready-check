@@ -7,13 +7,18 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.Text
 import com.example.tripglide.ui.booking.BookingDetailScreen
-import com.example.tripglide.ui.detail.TripDetailScreen
-import com.example.tripglide.ui.home.HomeScreen
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
-    object TripDetail : Screen("trip_detail")
+    object CircleDetail : Screen("circle_detail/{circleId}") {
+        fun createRoute(circleId: String) = "circle_detail/$circleId"
+    }
+    object Chat : Screen("chat/{circleId}") {
+        fun createRoute(circleId: String) = "chat/$circleId"
+    }
     object BookingDetail : Screen("booking_detail")
     object Login : Screen("login")
     object Profile : Screen("profile")
@@ -47,41 +52,34 @@ fun TripGlideNavHost(
             )
         }
         composable(Screen.Home.route) {
-            HomeScreen(
-                onTripClick = { navController.navigate(Screen.TripDetail.route) },
-                onProfileClick = { navController.navigate(Screen.Profile.route) },
-                onNavigateToOnboarding = {
-                    navController.navigate(Screen.Onboarding.route) {
-                        popUpTo(Screen.Home.route) { inclusive = true }
-                    }
-                }
+            com.example.tripglide.ui.main.MainScreen(navController = navController)
+        }
+        composable(
+            route = Screen.CircleDetail.route,
+            arguments = listOf(androidx.navigation.navArgument("circleId") { type = androidx.navigation.NavType.StringType })
+        ) { backStackEntry ->
+            val circleId = backStackEntry.arguments?.getString("circleId") ?: ""
+            com.example.tripglide.ui.detail.CircleDetailScreen(
+                circleId = circleId,
+                onBackClick = { navController.popBackStack() },
+                onNavigateToChat = { navController.navigate(Screen.Chat.createRoute(circleId)) }
             )
         }
-        composable(Screen.TripDetail.route) {
-            TripDetailScreen(
-                onBackClick = { navController.popBackStack() },
-                onTourClick = { navController.navigate(Screen.BookingDetail.route) }
-            )
+        composable(
+            route = Screen.Chat.route,
+            arguments = listOf(androidx.navigation.navArgument("circleId") { type = androidx.navigation.NavType.StringType })
+        ) {
+             // Placeholder Chat Screen
+             androidx.compose.foundation.layout.Box(modifier = androidx.compose.ui.Modifier.fillMaxSize()) {
+                 androidx.compose.material3.Text("Chat Screen Placeholder")
+             }
         }
         composable(Screen.BookingDetail.route) {
             BookingDetailScreen(
                 onBackClick = { navController.popBackStack() }
             )
         }
-        composable(Screen.Profile.route) {
-            com.example.tripglide.ui.profile.ProfileScreen(
-                onBackClick = { navController.popBackStack() },
-                onLogout = {
-                    navController.navigate(Screen.Login.route) {
-                        popUpTo(Screen.Home.route) { inclusive = true }
-                    }
-                },
-                onAddFriendClick = { navController.navigate(Screen.AddFriend.route) },
-                onFriendsClick = { navController.navigate(Screen.Friends.route) },
-                onEditProfileClick = { navController.navigate(Screen.EditProfile.route) },
-                onFriendRequestsClick = { navController.navigate(Screen.FriendRequests.route) }
-            )
-        }
+
         composable(Screen.AddFriend.route) {
              val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
              com.example.tripglide.ui.social.AddFriendScreen(
@@ -92,17 +90,7 @@ fun TripGlideNavHost(
                  }
              )
         }
-        composable(Screen.Friends.route) {
-            com.example.tripglide.ui.social.FriendsScreen(
-                onBackClick = { navController.popBackStack() },
-                viewModel = androidx.lifecycle.viewmodel.compose.viewModel(
-                    factory = com.example.tripglide.ui.social.SocialViewModelFactory(androidx.compose.ui.platform.LocalContext.current)
-                ),
-                onFriendClick = { friendUid -> 
-                    navController.navigate(Screen.UserProfile.createRoute(friendUid))
-                }
-            )
-        }
+
         composable(Screen.EditProfile.route) {
             com.example.tripglide.ui.profile.EditProfileScreen(
                 viewModel = androidx.lifecycle.viewmodel.compose.viewModel(
@@ -123,14 +111,7 @@ fun TripGlideNavHost(
                 }
             )
         }
-        composable(Screen.FriendRequests.route) {
-            com.example.tripglide.ui.social.FriendRequestsScreen(
-                viewModel = androidx.lifecycle.viewmodel.compose.viewModel(
-                    factory = com.example.tripglide.ui.social.SocialViewModelFactory(androidx.compose.ui.platform.LocalContext.current)
-                ),
-                onBackClick = { navController.popBackStack() }
-            )
-        }
+
         composable(
             route = Screen.UserProfile.route,
             arguments = listOf(androidx.navigation.navArgument("uid") { type = androidx.navigation.NavType.StringType })

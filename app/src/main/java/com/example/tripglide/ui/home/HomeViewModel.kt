@@ -91,9 +91,36 @@ class HomeViewModel(
         _shouldNavigateToOnboarding.value = false
     }
 
+    private val _creationState = MutableStateFlow<CreateCircleUiState>(CreateCircleUiState.Idle)
+    val creationState: StateFlow<CreateCircleUiState> = _creationState.asStateFlow()
+
+    fun createCircle(name: String, game: String) {
+        viewModelScope.launch {
+            _creationState.value = CreateCircleUiState.Loading
+            val result = circleRepository.createCircle(name, game, "SEA")
+            if (result.isSuccess) {
+                _creationState.value = CreateCircleUiState.Success
+                // Flow updates automatically
+            } else {
+                _creationState.value = CreateCircleUiState.Error(result.exceptionOrNull()?.message ?: "Unknown error")
+            }
+        }
+    }
+
+    fun resetCreationState() {
+        _creationState.value = CreateCircleUiState.Idle
+    }
+
     fun signOut() {
         authRepository.signOut()
     }
+}
+
+sealed interface CreateCircleUiState {
+    data object Idle : CreateCircleUiState
+    data object Loading : CreateCircleUiState
+    data object Success : CreateCircleUiState
+    data class Error(val message: String) : CreateCircleUiState
 }
 
 class HomeViewModelFactory(private val context: Context) : ViewModelProvider.Factory {
