@@ -48,226 +48,296 @@ exports.onFriendRequest = functions.firestore.onDocumentCreated(
           senderId: request.senderId || "",
           senderName: request.senderName || "",
           click_action: "FRIEND_REQUESTS"
-        },
-        android: {
-          priority: "high",
-          notification: {
-            channelId: "tripglide_notifications"
-          }
         }
       };
 
-      const response = await admin.messaging().send(message);
-      console.log("Notification sent successfully:", response);
-      return response;
-
+      await admin.messaging().send(message);
+      console.log("Notification sent to:", request.receiverId);
     } catch (error) {
       console.error("Error sending notification:", error);
-      return null;
     }
   }
 );
 
 /**
- * Cloud Function triggered when a friend_request is updated.
- * When status changes to ACCEPTED:
- * 1. Adds both users to each other's friends list
- * 2. Sends notification to the sender
+ * Cloud Function triggered when a new summon is created in a circle.
+ * Sends a high-priority FCM notification to all circle members.
  */
-exports.onFriendRequestUpdate = functions.firestore.onDocumentUpdated(
-  "friend_requests/{requestId}",
+exports.onSummonCreated = functions.firestore.onDocumentCreated(
+  "circles/{circleId}/summons/{summonId}",
   async (event) => {
-    const before = event.data.before.data();
-    const after = event.data.after.data();
+    const summon = event.data.data();
+    const circleId = event.params.circleId;
+    const summonId = event.params.summonId;
 
-    // Only process if status changed to ACCEPTED
-    if (before.status === after.status || after.status !== "ACCEPTED") {
-      console.log("Status not changed to ACCEPTED, skipping");
+    if (!summon) {
+      console.log("Invalid summon data");
       return null;
     }
 
-    const senderId = after.senderId;
-    const receiverId = after.receiverId;
-
-    console.log(`Friend request accepted: ${senderId} <-> ${receiverId}`);
+    const initiatorId = summon.initiatorId;
+    const initiatorName = summon.initiatorName || "Someone";
+    const initiatorPhotoUrl = summon.initiatorPhotoUrl || "";
 
     try {
-      // Get both users' data
-      const [senderDoc, receiverDoc] = await Promise.all([
-        db.collection("users").doc(senderId).get(),
-        db.collection("users").doc(receiverId).get()
-      ]);
-
-      if (!senderDoc.exists || !receiverDoc.exists) {
-        console.log("One or both users not found");
+      // 1. Fetch the Circle document to get memberIds
+      const circleDoc = await db.collection("circles").doc(circleId).get();
+      if (!circleDoc.exists) {
+        console.log("Circle not found:", circleId);
         return null;
       }
 
-      const senderData = senderDoc.data();
-      const receiverData = receiverDoc.data();
-      const now = admin.firestore.Timestamp.now();
+      const circleData = circleDoc.data();
+      const memberIds = circleData.memberIds || [];
 
-      // Add receiver to sender's friends list
-      const senderFriendData = {
-        uid: receiverId,
-        displayName: receiverData.displayName || "",
-        photoUrl: receiverData.photoUrl || "",
-        username: receiverData.username || "",
-        since: now
-      };
+      // 2. Send to ALL members (including initiator for multi-device support)
+      const recipients = memberIds;
 
-      // Add sender to receiver's friends list
-      const receiverFriendData = {
-        uid: senderId,
-        displayName: senderData.displayName || "",
-        photoUrl: senderData.photoUrl || "",
-        username: senderData.username || "",
-        since: now
-      };
-
-      // Write to both friends subcollections
-      await Promise.all([
-        db.collection("users").doc(senderId).collection("friends").doc(receiverId).set(senderFriendData),
-        db.collection("users").doc(receiverId).collection("friends").doc(senderId).set(receiverFriendData)
-      ]);
-
-      console.log("Friends added to both users successfully");
-
-      // Send notification to sender
-      const fcmToken = senderData?.metadata?.fcmToken;
-      if (fcmToken) {
-        const message = {
-          token: fcmToken,
-          notification: {
-            title: "Friend Request Accepted!",
-            body: `${receiverData.displayName || "Someone"} is now your friend!`
-          },
-          data: {
-            type: "friend_accepted",
-            friendId: receiverId,
-            friendName: receiverData.displayName || "",
-            click_action: "FRIENDS"
-          },
-          android: {
-            priority: "high",
-            notification: {
-              channelId: "tripglide_notifications"
-            }
-          }
-        };
-
-        await admin.messaging().send(message);
-        console.log("Acceptance notification sent to sender");
+      if (recipients.length === 0) {
+        console.log("No recipients for summon");
+        return null;
       }
 
-      return { success: true };
+      console.log("Sending summon to", recipients.length, "members:", recipients);
+
+      // 3. Fetch tokens for all recipients
+      const userPromises = recipients.map(uid => db.collection("users").doc(uid).get());
+      const userDocs = await Promise.all(userPromises);
+
+      const tokens = [];
+      userDocs.forEach((doc, idx) => {
+        if (doc.exists) {
+          const userData = doc.data();
+          const token = userData.fcmToken || userData.metadata?.fcmToken;
+          if (token) {
+            tokens.push(token);
+            console.log("Found token for user:", recipients[idx]);
+          } else {
+            console.log("No token for user:", recipients[idx]);
+          }
+        }
+      });
+
+      if (tokens.length === 0) {
+        console.log("No tokens found for recipients");
+        return null;
+      }
+
+      // 4. Send Multicast Message - DATA ONLY (no notification block)
+      const message = {
+        tokens: tokens,
+        data: {
+          type: "SUMMON",
+          summonId: summonId,
+          circleId: circleId,
+          initiatorName: initiatorName,
+          initiatorPhotoUrl: initiatorPhotoUrl,
+          initiatorId: initiatorId,
+          timestamp: Date.now().toString()
+        },
+        android: {
+          priority: "high",
+          ttl: 30000
+        }
+      };
+
+      const response = await admin.messaging().sendEachForMulticast(message);
+      console.log("Summon notifications sent:", response.successCount, "of", tokens.length);
+      
+      if (response.failureCount > 0) {
+        response.responses.forEach((resp, idx) => {
+          if (!resp.success) {
+            console.log('Token failed:', tokens[idx], 'Error:', resp.error?.message);
+          }
+        });
+      }
+
+      return null;
 
     } catch (error) {
-      console.error("Error processing friend acceptance:", error);
+      console.error("Error sending summon notification:", error);
       return null;
     }
   }
 );
 
 /**
- * Callable function to remove a friend.
- * Removes from both users' friends lists.
+ * Cloud Function triggered when a new message is sent in a Circle.
+ * Sends FCM notification to all circle members (except sender).
  */
-exports.removeFriend = functions.https.onCall(async (request) => {
-  const { auth, data } = request;
-
-  if (!auth) {
-    throw new functions.https.HttpsError("unauthenticated", "Must be logged in");
-  }
-
-  const currentUid = auth.uid;
-  const friendUid = data.friendUid;
-
-  if (!friendUid) {
-    throw new functions.https.HttpsError("invalid-argument", "friendUid is required");
-  }
-
-  try {
-    // Remove from both friends lists
-    await Promise.all([
-      db.collection("users").doc(currentUid).collection("friends").doc(friendUid).delete(),
-      db.collection("users").doc(friendUid).collection("friends").doc(currentUid).delete()
-    ]);
-
-    console.log(`Friend removed: ${currentUid} <-> ${friendUid}`);
-    return { success: true };
-
-  } catch (error) {
-    console.error("Error removing friend:", error);
-    throw new functions.https.HttpsError("internal", "Failed to remove friend");
-  }
-});
-
-/**
- * Cloud Function triggered when a user is added to a circle.
- * Sends an FCM notification to the added user.
- */
-exports.sendSquadInviteNotification = functions.firestore.onDocumentCreated(
-  "circles/{circleId}/members/{memberDocId}",
+exports.onCircleMessage = functions.firestore.onDocumentCreated(
+  "circles/{circleId}/messages/{messageId}",
   async (event) => {
-    const snapshot = event.data;
-    if (!snapshot) {
-        console.log("No data associated with the event");
-        return;
-    }
-    const memberData = snapshot.data();
+    const message = event.data.data();
     const circleId = event.params.circleId;
-    // Assuming the document contains userId, or the document ID IS the userId. 
-    // The prompt says "Get the userId from the created document data."
-    const userId = memberData.userId || event.params.memberDocId; 
 
-    if (!userId) {
-        console.log("No userId found in member document");
-        return;
+    if (!message || message.senderId === "SYSTEM") {
+      console.log("Skipping system message notification");
+      return null;
     }
+
+    const senderId = message.senderId;
+    const senderName = message.senderName || "Someone";
+    const senderPhotoUrl = message.senderPhotoUrl || "";
+    const messageContent = message.content || "";
+    const messageType = message.type || "TEXT";
 
     try {
-        // 1. Fetch Circle Name
-        const circleDoc = await db.collection("circles").doc(circleId).get();
-        const circleName = circleDoc.exists ? circleDoc.data().name : "Unknown Circle";
+      // Get Circle info
+      const circleDoc = await db.collection("circles").doc(circleId).get();
+      if (!circleDoc.exists) {
+        console.log("Circle not found:", circleId);
+        return null;
+      }
 
-        // 2. Fetch User's FCM Token
-        const userDoc = await db.collection("users").doc(userId).get();
-        if (!userDoc.exists) {
-            console.log(`User ${userId} not found`);
-            return;
+      const circleData = circleDoc.data();
+      const circleName = circleData.name || "Circle";
+      const memberIds = circleData.memberIds || [];
+
+      // Exclude the sender
+      const recipients = memberIds.filter(uid => uid !== senderId);
+
+      if (recipients.length === 0) {
+        console.log("No recipients for circle message");
+        return null;
+      }
+
+      console.log("Sending circle message notification to", recipients.length, "members");
+
+      // Fetch tokens for all recipients
+      const userPromises = recipients.map(uid => db.collection("users").doc(uid).get());
+      const userDocs = await Promise.all(userPromises);
+
+      const tokens = [];
+      userDocs.forEach((doc) => {
+        if (doc.exists) {
+          const userData = doc.data();
+          const token = userData.fcmToken || userData.metadata?.fcmToken;
+          if (token) {
+            tokens.push(token);
+          }
         }
-        
-        const userData = userDoc.data();
-        // Check requested path first, then fallback to metadata
-        const fcmToken = userData.fcmToken || userData?.metadata?.fcmToken;
+      });
 
-        if (!fcmToken) {
-            console.log(`No FCM token found for user ${userId}`);
-            return;
+      if (tokens.length === 0) {
+        console.log("No tokens found for circle message recipients");
+        return null;
+      }
+
+      // Send Multicast Message
+      const fcmMessage = {
+        tokens: tokens,
+        data: {
+          type: "CIRCLE_MESSAGE",
+          channelId: circleId,
+          circleName: circleName,
+          senderId: senderId,
+          senderName: senderName,
+          senderPhotoUrl: senderPhotoUrl,
+          messageContent: messageContent.substring(0, 200), // Truncate
+          messageType: messageType,
+          timestamp: Date.now().toString()
+        },
+        android: {
+          priority: "high"
         }
+      };
 
-        // 3. Construct Payload
-        const payload = {
-            token: fcmToken,
-            notification: {
-                title: "SQUAD SUMMON!",
-                body: `You have been added to the squad: ${circleName}.`,
-            },
-            data: {
-                click_action: "FLUTTER_NOTIFICATION_CLICK", 
-                screen: "squad_detail",
-                circleId: circleId
-            }
-        };
+      const response = await admin.messaging().sendEachForMulticast(fcmMessage);
+      console.log("Circle message notifications sent:", response.successCount, "of", tokens.length);
 
-        // 4. Send Notification
-        await admin.messaging().send(payload);
-        console.log(`Notification sent to user ${userId} for circle ${circleId}`);
+      return null;
 
     } catch (error) {
-        console.error("Error sending squad invite notification:", error);
+      console.error("Error sending circle message notification:", error);
+      return null;
     }
   }
 );
 
+/**
+ * Cloud Function triggered when a new DM is sent.
+ * Sends FCM notification to the recipient.
+ */
+exports.onDirectMessage = functions.firestore.onDocumentCreated(
+  "chats/{channelId}/messages/{messageId}",
+  async (event) => {
+    const message = event.data.data();
+    const channelId = event.params.channelId;
+
+    if (!message || message.senderId === "SYSTEM") {
+      console.log("Skipping system message notification");
+      return null;
+    }
+
+    const senderId = message.senderId;
+    const senderName = message.senderName || "Someone";
+    const senderPhotoUrl = message.senderPhotoUrl || "";
+    const messageContent = message.content || "";
+    const messageType = message.type || "TEXT";
+
+    try {
+      // Get DM channel to find the recipient
+      const channelDoc = await db.collection("chats").doc(channelId).get();
+      if (!channelDoc.exists) {
+        console.log("DM channel not found:", channelId);
+        return null;
+      }
+
+      const channelData = channelDoc.data();
+      const participants = channelData.participants || [];
+
+      // Find the recipient (the other participant)
+      const recipientId = participants.find(uid => uid !== senderId);
+
+      if (!recipientId) {
+        console.log("Recipient not found in DM channel");
+        return null;
+      }
+
+      console.log("Sending DM notification to:", recipientId);
+
+      // Get recipient's FCM token
+      const recipientDoc = await db.collection("users").doc(recipientId).get();
+      if (!recipientDoc.exists) {
+        console.log("Recipient user not found:", recipientId);
+        return null;
+      }
+
+      const recipientData = recipientDoc.data();
+      const token = recipientData.fcmToken || recipientData.metadata?.fcmToken;
+
+      if (!token) {
+        console.log("No FCM token for recipient:", recipientId);
+        return null;
+      }
+
+      // Send FCM notification
+      const fcmMessage = {
+        token: token,
+        data: {
+          type: "DM_MESSAGE",
+          channelId: channelId,
+          senderId: senderId,
+          senderName: senderName,
+          senderPhotoUrl: senderPhotoUrl,
+          messageContent: messageContent.substring(0, 200), // Truncate
+          messageType: messageType,
+          timestamp: Date.now().toString()
+        },
+        android: {
+          priority: "high"
+        }
+      };
+
+      await admin.messaging().send(fcmMessage);
+      console.log("DM notification sent to:", recipientId);
+
+      return null;
+
+    } catch (error) {
+      console.error("Error sending DM notification:", error);
+      return null;
+    }
+  }
+);

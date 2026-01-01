@@ -140,4 +140,26 @@ interface CircleRepository {
      * @return Flow emitting filtered messages
      */
     fun getMediaMessages(circleId: String, types: List<String>): Flow<List<ChatMessage>>
+
+    /**
+     * Initiates a Summon (Ready Check) for the circle.
+     * Fails if a summon is already active.
+     */
+    suspend fun startSummon(circleId: String): Result<String>
+
+    /**
+     * Responds to an active summon.
+     */
+    suspend fun respondToSummon(circleId: String, summonId: String, status: String): Result<Unit>
+
+    /**
+     * Observes the current active summon for a circle.
+     */
+    fun getActiveSummon(circleId: String, summonId: String): Flow<com.example.tripglide.data.model.Summon?>
+    
+    /**
+     * Clears a stale/stuck activeSummonId from a circle.
+     * Use this when a summon times out without proper cleanup.
+     */
+    suspend fun clearActiveSummon(circleId: String): Result<Unit>
 }

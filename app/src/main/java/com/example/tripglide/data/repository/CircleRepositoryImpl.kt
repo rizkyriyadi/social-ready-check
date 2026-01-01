@@ -1,11 +1,15 @@
 package com.example.tripglide.data.repository
 
+import android.util.Log
 import com.example.tripglide.data.model.AuditLog
 import com.example.tripglide.data.model.ChatMessage
 import com.example.tripglide.data.model.Circle
 import com.example.tripglide.data.model.CircleMember
 import com.example.tripglide.data.model.MemberRole
 import com.example.tripglide.data.model.MessageType
+import com.example.tripglide.data.model.Summon
+import com.example.tripglide.data.model.SummonResponseStatus
+import com.example.tripglide.data.model.SummonStatus
 import com.example.tripglide.data.model.User
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
@@ -17,6 +21,8 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
+
+private const val TAG = "CircleRepository"
 
 /**
  * Implementation of CircleRepository using Firebase Firestore.
@@ -553,6 +559,143 @@ class CircleRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun startSummon(circleId: String): Result<String> {
+        Log.d(TAG, "🚀 startSummon called for circle: $circleId")
+        val currentUserId = getCurrentUserId() 
+        if (currentUserId == null) {
+            Log.e(TAG, "❌ User not logged in")
+            return Result.failure(Exception("Not logged in"))
+        }
+        Log.d(TAG, "📌 Current user: $currentUserId")
+        
+        return try {
+            val userDoc = firestore.collection("users").document(currentUserId).get().await()
+            val user = userDoc.toObject(User::class.java) 
+            if (user == null) {
+                Log.e(TAG, "❌ User document not found")
+                return Result.failure(Exception("User not found"))
+            }
+            Log.d(TAG, "👤 User: ${user.displayName}")
+
+            val summonId = firestore.runTransaction { transaction ->
+                Log.d(TAG, "🔄 Starting Firestore transaction...")
+                val circleRef = circlesCollection.document(circleId)
+                val circleSnapshot = transaction.get(circleRef)
+                val circle = circleSnapshot.toObject(Circle::class.java)
+                    ?: throw Exception("Circle not found")
+                
+                Log.d(TAG, "📦 Circle found: ${circle.name}, activeSummonId: ${circle.activeSummonId}")
+
+                if (circle.activeSummonId != null) {
+                    Log.e(TAG, "⚠️ Summon already active!")
+                    throw Exception("Summon already active!")
+                }
+
+                val newSummonRef = circleRef.collection("summons").document()
+                Log.d(TAG, "📝 Creating summon doc: ${newSummonRef.id}")
+                
+                val summon = Summon(
+                    id = newSummonRef.id,
+                    initiatorId = currentUserId,
+                    initiatorName = user.displayName,
+                    initiatorPhotoUrl = user.photoUrl,
+                    createdAt = null, // @ServerTimestamp will populate this
+                    status = SummonStatus.PENDING.name,
+                    responses = mapOf(currentUserId to SummonResponseStatus.ACCEPTED.name) // Initiator auto-accepts
+                )
+
+                transaction.set(newSummonRef, summon)
+                transaction.update(circleRef, "activeSummonId", newSummonRef.id)
+                
+                Log.d(TAG, "✅ Transaction complete, summonId: ${newSummonRef.id}")
+                newSummonRef.id
+            }.await()
+
+            Log.d(TAG, "🎉 Summon created successfully: $summonId")
+            Result.success(summonId)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ startSummon failed: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun respondToSummon(circleId: String, summonId: String, status: String): Result<Unit> {
+        val currentUserId = getCurrentUserId() ?: return Result.failure(Exception("Not logged in"))
+        Log.d(TAG, "📝 respondToSummon: circleId=$circleId, summonId=$summonId, status=$status, userId=$currentUserId")
+
+        return try {
+            firestore.runTransaction { transaction ->
+                val circleRef = circlesCollection.document(circleId)
+                val summonRef = circleRef.collection("summons").document(summonId)
+                
+                val circleSnapshot = transaction.get(circleRef)
+                val circle = circleSnapshot.toObject(Circle::class.java) 
+                    ?: throw Exception("Circle not found")
+                
+                val summonSnapshot = transaction.get(summonRef)
+                val summon = summonSnapshot.toObject(Summon::class.java) 
+                    ?: throw Exception("Summon not found")
+
+                if (summon.status != SummonStatus.PENDING.name) {
+                    Log.d(TAG, "⚠️ Summon already completed: ${summon.status}")
+                    throw Exception("Summon is no longer active")
+                }
+
+                // Update response
+                val updatedResponses = summon.responses.toMutableMap()
+                updatedResponses[currentUserId] = status
+                transaction.update(summonRef, "responses.$currentUserId", status)
+                Log.d(TAG, "📊 Updated responses: $updatedResponses")
+
+                // Check status
+                when (status) {
+                    SummonResponseStatus.DECLINED.name, SummonResponseStatus.TIMEOUT.name -> {
+                        // Fail immediately
+                        Log.d(TAG, "❌ Summon FAILED due to: $status")
+                        transaction.update(summonRef, "status", SummonStatus.FAILED.name)
+                        transaction.update(circleRef, "activeSummonId", null)
+                    }
+                    SummonResponseStatus.ACCEPTED.name -> {
+                        // Check if all members accepted
+                        val allMemberIds = circle.memberIds
+                        val acceptedCount = updatedResponses.count { it.value == SummonResponseStatus.ACCEPTED.name }
+                        Log.d(TAG, "✅ Accepted: $acceptedCount / ${allMemberIds.size}")
+                        
+                        if (acceptedCount >= allMemberIds.size) {
+                            Log.d(TAG, "🎉 All members accepted - SUMMON SUCCESS!")
+                            transaction.update(summonRef, "status", SummonStatus.SUCCESS.name)
+                            transaction.update(circleRef, "activeSummonId", null)
+                        }
+                    }
+                    else -> {
+                        Log.d(TAG, "⚠️ Unknown status: $status")
+                    }
+                }
+                Unit // Return Unit from transaction
+            }.await()
+            Log.d(TAG, "✅ respondToSummon completed successfully")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ respondToSummon failed: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    override fun getActiveSummon(circleId: String, summonId: String): Flow<Summon?> = callbackFlow {
+        val listener = circlesCollection.document(circleId)
+            .collection("summons")
+            .document(summonId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                val summon = snapshot?.toObject(Summon::class.java)
+                trySend(summon)
+            }
+        awaitClose { listener.remove() }
+    }
+
     // ==================== UTILITIES ====================
 
     override suspend fun markAsRead(circleId: String): Result<Unit> {
@@ -568,6 +711,20 @@ class CircleRepositoryImpl @Inject constructor(
 
             Result.success(Unit)
         } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    
+    override suspend fun clearActiveSummon(circleId: String): Result<Unit> {
+        Log.d(TAG, "🧹 Clearing activeSummonId for circle: $circleId")
+        return try {
+            circlesCollection.document(circleId)
+                .update("activeSummonId", null)
+                .await()
+            Log.d(TAG, "✅ activeSummonId cleared")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to clear activeSummonId: ${e.message}", e)
             Result.failure(e)
         }
     }

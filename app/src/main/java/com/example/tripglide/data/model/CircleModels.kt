@@ -28,8 +28,40 @@ data class Circle(
     val updatedAt: Timestamp? = null,
     val lastMessage: LastMessage = LastMessage(),
     val metadata: CircleMetadata = CircleMetadata(),
-    val settings: CircleSettings = CircleSettings()
+    val settings: CircleSettings = CircleSettings(),
+    val activeSummonId: String? = null // ID of the currently active summon, if any
 )
+
+/**
+ * Represents a "Summon" (Ready Check) event.
+ * Subcollection: circles/{circleId}/summons/{summonId}
+ */
+@IgnoreExtraProperties
+data class Summon(
+    @DocumentId
+    val id: String = "",
+    val initiatorId: String = "",
+    val initiatorName: String = "", // Denormalized for UI
+    val initiatorPhotoUrl: String? = null, // Denormalized for UI
+    @ServerTimestamp
+    val createdAt: Timestamp? = null,
+    val expiresAt: Timestamp? = null, // Usually createdAt + 30s
+    val status: String = SummonStatus.PENDING.name,
+    val responses: Map<String, String> = emptyMap() // Map<UserId, ResponseStatus>
+)
+
+enum class SummonStatus {
+    PENDING,
+    SUCCESS, // All accepted
+    FAILED   // Someone declined or timeout
+}
+
+enum class SummonResponseStatus {
+    PENDING,
+    ACCEPTED,
+    DECLINED,
+    TIMEOUT
+}
 
 /**
  * Denormalized preview of the last message for quick UI display.

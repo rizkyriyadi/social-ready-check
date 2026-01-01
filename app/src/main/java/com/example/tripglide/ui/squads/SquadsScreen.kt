@@ -377,7 +377,7 @@ fun SquadListContent(
                 title = circle.name,
                 subtitle = circle.game,
                 statusText = "${circle.metadata.memberCount}/5 Online",
-                imageUrl = getGameWallpaper(circle.game),
+                imageUrl = circle.imageUrl?.takeIf { it.isNotEmpty() } ?: getGameWallpaper(circle.game),
                 modifier = Modifier.padding(horizontal = 24.dp),
                 onClick = { onCircleClick(circle.documentId) }
             )

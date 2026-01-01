@@ -1,5 +1,8 @@
 package com.example.tripglide.ui.detail
 
+import android.content.Intent
+import android.util.Log
+import android.widget.Toast
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -130,7 +133,81 @@ fun CircleDetailScreen(
 
                 // Cell A: SUMMON BUTTON (Hero)
                 item(span = StaggeredGridItemSpan.FullLine) {
-                    PremiumSummonButton()
+                    val summonState by viewModel.summonState.collectAsState()
+                    val context = LocalContext.current
+                    var showAlreadyActiveDialog by remember { mutableStateOf(false) }
+                    var activeSummonId by remember { mutableStateOf<String?>(null) }
+                    
+                    // Handle summon state changes
+                    LaunchedEffect(summonState) {
+                        when (val state = summonState) {
+                            is SummonState.Success -> {
+                                // Launch SummonActivity for initiator
+                                val intent = Intent(context, com.example.tripglide.ui.summon.SummonActivity::class.java).apply {
+                                    putExtra("circleId", circleId)
+                                    putExtra("summonId", state.summonId)
+                                    putExtra("initiatorName", "You")
+                                    putExtra("isInitiator", true)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                                viewModel.resetSummonState()
+                            }
+                            is SummonState.AlreadyActive -> {
+                                activeSummonId = state.existingSummonId
+                                showAlreadyActiveDialog = true
+                            }
+                            is SummonState.Error -> {
+                                Toast.makeText(context, "❌ ${state.message}", Toast.LENGTH_LONG).show()
+                                viewModel.resetSummonState()
+                            }
+                            else -> {}
+                        }
+                    }
+                    
+                    // Dialog for already active summon
+                    if (showAlreadyActiveDialog && activeSummonId != null) {
+                        AlertDialog(
+                            onDismissRequest = { 
+                                showAlreadyActiveDialog = false
+                                viewModel.resetSummonState()
+                            },
+                            title = { Text("Summon Already Active", color = Color.White) },
+                            text = { Text("There's an active summon in progress. Would you like to join it or clear it?", color = Color.Gray) },
+                            containerColor = Color(0xFF1C1C1E),
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    showAlreadyActiveDialog = false
+                                    // Join existing summon
+                                    val intent = Intent(context, com.example.tripglide.ui.summon.SummonActivity::class.java).apply {
+                                        putExtra("circleId", circleId)
+                                        putExtra("summonId", activeSummonId)
+                                        putExtra("initiatorName", "Someone")
+                                        putExtra("isInitiator", false)
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                    viewModel.resetSummonState()
+                                }) {
+                                    Text("Join", color = Color.Green)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = {
+                                    showAlreadyActiveDialog = false
+                                    viewModel.clearStaleSummon(circleId)
+                                    Toast.makeText(context, "Summon cleared!", Toast.LENGTH_SHORT).show()
+                                }) {
+                                    Text("Clear & Retry", color = Color.Red)
+                                }
+                            }
+                        )
+                    }
+                    
+                    PremiumSummonButton(
+                        onClick = { viewModel.startSummon(circleId) },
+                        isLoading = summonState is SummonState.Loading
+                    )
                 }
 
                 // Cell B: Squad Status (Real Data)
@@ -171,6 +248,9 @@ class CircleDetailViewModel(
 
     private val _members = MutableStateFlow<List<User>>(emptyList())
     val members: StateFlow<List<User>> = _members.asStateFlow()
+    
+    private val _summonState = MutableStateFlow<SummonState>(SummonState.Idle)
+    val summonState: StateFlow<SummonState> = _summonState.asStateFlow()
 
     fun loadCircle(id: String) {
         viewModelScope.launch {
@@ -185,6 +265,65 @@ class CircleDetailViewModel(
             }
         }
     }
+
+    fun startSummon(circleId: String) {
+        Log.d("CircleDetailVM", "🚀 Starting summon for circle: $circleId")
+        _summonState.value = SummonState.Loading
+        
+        viewModelScope.launch {
+            try {
+                val result = repository.startSummon(circleId)
+                result.fold(
+                    onSuccess = { summonId ->
+                        Log.d("CircleDetailVM", "✅ Summon created successfully: $summonId")
+                        _summonState.value = SummonState.Success(summonId)
+                    },
+                    onFailure = { error ->
+                        Log.e("CircleDetailVM", "❌ Summon failed: ${error.message}", error)
+                        // Check if it's "already active" error
+                        if (error.message?.contains("already active", ignoreCase = true) == true) {
+                            // Get the existing summon ID and join it
+                            val currentCircle = _circle.value
+                            val existingSummonId = currentCircle?.activeSummonId
+                            if (existingSummonId != null) {
+                                Log.d("CircleDetailVM", "🔄 Joining existing summon: $existingSummonId")
+                                _summonState.value = SummonState.AlreadyActive(existingSummonId)
+                            } else {
+                                _summonState.value = SummonState.Error(error.message ?: "Unknown error")
+                            }
+                        } else {
+                            _summonState.value = SummonState.Error(error.message ?: "Unknown error")
+                        }
+                    }
+                )
+            } catch (e: Exception) {
+                Log.e("CircleDetailVM", "❌ Summon exception: ${e.message}", e)
+                _summonState.value = SummonState.Error(e.message ?: "Unknown error")
+            }
+        }
+    }
+    
+    fun clearStaleSummon(circleId: String) {
+        Log.d("CircleDetailVM", "🧹 Clearing stale summon for circle: $circleId")
+        viewModelScope.launch {
+            repository.clearActiveSummon(circleId)
+            // Reload circle to refresh activeSummonId
+            loadCircle(circleId)
+            _summonState.value = SummonState.Idle
+        }
+    }
+    
+    fun resetSummonState() {
+        _summonState.value = SummonState.Idle
+    }
+}
+
+sealed class SummonState {
+    object Idle : SummonState()
+    object Loading : SummonState()
+    data class Success(val summonId: String) : SummonState()
+    data class AlreadyActive(val existingSummonId: String) : SummonState()
+    data class Error(val message: String) : SummonState()
 }
 
 class CircleDetailViewModelFactory(private val context: android.content.Context) : ViewModelProvider.Factory {
@@ -220,7 +359,7 @@ fun PremiumGlassCard(
 }
 
 @Composable
-fun PremiumSummonButton() {
+fun PremiumSummonButton(onClick: () -> Unit, isLoading: Boolean = false) {
     // Shimmer Animation
     val transition = rememberInfiniteTransition()
     val translateAnim = transition.animateFloat(
@@ -239,10 +378,11 @@ fun PremiumSummonButton() {
             .clip(RoundedCornerShape(45.dp)) // Pill Shape
             .background(
                 Brush.linearGradient(
-                    colors = listOf(Color(0xFFCC2B2B), Color(0xFFE84545)) // Deep Red Gradient
+                    colors = if (isLoading) listOf(Color(0xFF666666), Color(0xFF888888))
+                             else listOf(Color(0xFFCC2B2B), Color(0xFFE84545)) // Deep Red Gradient
                 )
             )
-            .clickable { /* Logic */ }
+            .clickable(enabled = !isLoading) { onClick() }
             // "Shiny Edge" Overlay
             .drawBehind {
                 drawRect(
@@ -266,17 +406,25 @@ fun PremiumSummonButton() {
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // Icon
-                Icon(
-                    imageVector = Icons.Default.Notifications,
-                    contentDescription = null,
-                    tint = White,
-                    modifier = Modifier.size(28.dp)
-                )
+                // Icon or Loading
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(28.dp),
+                        color = White,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Notifications,
+                        contentDescription = null,
+                        tint = White,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
                 Spacer(modifier = Modifier.width(16.dp))
                 Column {
                     Text(
-                        text = "SUMMON PARTY",
+                        text = if (isLoading) "SUMMONING..." else "SUMMON PARTY",
                         color = White,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,

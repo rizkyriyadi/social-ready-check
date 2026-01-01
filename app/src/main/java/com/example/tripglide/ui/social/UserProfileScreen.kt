@@ -43,7 +43,8 @@ fun UserProfileScreen(
     onBackClick: () -> Unit,
     onAddFriendClick: () -> Unit,
     onRemoveFriendClick: () -> Unit = {},
-    onClearStatus: () -> Unit
+    onClearStatus: () -> Unit,
+    onMessageClick: () -> Unit = {}
 ) {
     var showRemoveConfirmDialog by remember { mutableStateOf(false) }
     var isActionInProgress by remember { mutableStateOf(false) }
@@ -202,10 +203,10 @@ fun UserProfileScreen(
                     if (isFriend) {
                         // Already friends - show Message and Remove options
                         IOSButton(
-                            text = "Message (Coming Soon)",
-                            onClick = { /* No-op */ },
+                            text = "💬 Send Message",
+                            onClick = onMessageClick,
                             containerColor = Color(0xFF007AFF),
-                            enabled = false
+                            enabled = true
                         )
                         
                         Spacer(modifier = Modifier.height(12.dp))

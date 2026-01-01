@@ -82,10 +82,19 @@ fun CircleSettingsScreen(
     ) { uri: Uri? ->
         uri?.let {
             scope.launch {
+                Log.d("CircleSettings", "Uploading image: $it")
                 val uploadResult = storageRepo.uploadCircleImage(circleId, it)
                 uploadResult.onSuccess { url ->
-                    circleRepo.updateCircleInfo(circleId, null, url)
-                    circleImage = url
+                    Log.d("CircleSettings", "Upload success: $url")
+                    val updateResult = circleRepo.updateCircleInfo(circleId, null, url)
+                    updateResult.onSuccess {
+                        circleImage = url
+                        Log.d("CircleSettings", "Circle updated with new image")
+                    }.onFailure { e ->
+                        Log.e("CircleSettings", "Failed to update circle", e)
+                    }
+                }.onFailure { e ->
+                    Log.e("CircleSettings", "Upload failed", e)
                 }
             }
         }

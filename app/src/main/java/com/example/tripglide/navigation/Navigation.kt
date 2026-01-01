@@ -1,6 +1,7 @@
 package com.example.tripglide.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.navigation.NavHostController
@@ -10,6 +11,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
 import com.example.tripglide.ui.booking.BookingDetailScreen
+import com.example.tripglide.MainActivity
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
@@ -18,6 +20,9 @@ sealed class Screen(val route: String) {
     }
     object Chat : Screen("chat/{circleId}") {
         fun createRoute(circleId: String) = "chat/$circleId"
+    }
+    object DirectMessage : Screen("dm/{channelId}") {
+        fun createRoute(channelId: String) = "dm/$channelId"
     }
     object BookingDetail : Screen("booking_detail")
     object Login : Screen("login")
@@ -42,8 +47,25 @@ sealed class Screen(val route: String) {
 @Composable
 fun TripGlideNavHost(
     navController: NavHostController = rememberNavController(),
-    startDestination: String = Screen.Home.route
+    startDestination: String = Screen.Home.route,
+    pendingChatNavigation: MainActivity.ChatNavigation? = null,
+    onChatNavigationConsumed: () -> Unit = {}
 ) {
+    // Handle pending chat navigation from notification
+    LaunchedEffect(pendingChatNavigation) {
+        if (pendingChatNavigation != null) {
+            when (pendingChatNavigation.chatType) {
+                "GROUP" -> {
+                    navController.navigate(Screen.Chat.createRoute(pendingChatNavigation.channelId))
+                }
+                "DIRECT" -> {
+                    navController.navigate(Screen.DirectMessage.createRoute(pendingChatNavigation.channelId))
+                }
+            }
+            onChatNavigationConsumed()
+        }
+    }
+    
     NavHost(
         navController = navController,
         startDestination = startDestination
@@ -105,11 +127,28 @@ fun TripGlideNavHost(
         composable(
             route = Screen.Chat.route,
             arguments = listOf(androidx.navigation.navArgument("circleId") { type = androidx.navigation.NavType.StringType })
-        ) {
-             // Placeholder Chat Screen
-             androidx.compose.foundation.layout.Box(modifier = androidx.compose.ui.Modifier.fillMaxSize()) {
-                 androidx.compose.material3.Text("Chat Screen Placeholder")
-             }
+        ) { backStackEntry ->
+            val circleId = backStackEntry.arguments?.getString("circleId") ?: ""
+            
+            // Get circle info for header
+            val viewModel: com.example.tripglide.ui.detail.CircleDetailViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
+                factory = com.example.tripglide.ui.detail.CircleDetailViewModelFactory(androidx.compose.ui.platform.LocalContext.current)
+            )
+            val circle by viewModel.circle.collectAsState()
+            
+            androidx.compose.runtime.LaunchedEffect(circleId) {
+                viewModel.loadCircle(circleId)
+            }
+            
+            com.example.tripglide.ui.chat.ChatScreen(
+                channelId = circleId,
+                chatType = com.example.tripglide.data.model.ChatType.GROUP,
+                channelName = circle?.name ?: "Chat",
+                channelImageUrl = circle?.imageUrl,
+                onBackClick = { navController.popBackStack() },
+                onInfoClick = { navController.navigate(Screen.CircleSettings.createRoute(circleId)) },
+                onProfileClick = { userId -> navController.navigate(Screen.UserProfile.createRoute(userId)) }
+            )
         }
         composable(Screen.BookingDetail.route) {
             BookingDetailScreen(
@@ -181,7 +220,45 @@ fun TripGlideNavHost(
                     viewModel.removeFriend(uid)
                     navController.popBackStack()
                 },
-                onClearStatus = { viewModel.clearStatus() }
+                onClearStatus = { viewModel.clearStatus() },
+                onMessageClick = { 
+                    // Generate DM channel ID and navigate
+                    val currentUserId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+                    val channelId = com.example.tripglide.data.model.DMChannel.generateChannelId(currentUserId, uid)
+                    navController.navigate(Screen.DirectMessage.createRoute(channelId))
+                }
+            )
+        }
+
+        // Direct Message Screen
+        composable(
+            route = Screen.DirectMessage.route,
+            arguments = listOf(androidx.navigation.navArgument("channelId") { type = androidx.navigation.NavType.StringType })
+        ) { backStackEntry ->
+            val channelId = backStackEntry.arguments?.getString("channelId") ?: ""
+            val chatRepository = androidx.compose.runtime.remember { com.example.tripglide.data.repository.ChatRepositoryImpl() }
+            
+            val otherUserNameState = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("Chat") }
+            val otherUserPhotoState = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+            val otherUserIdState = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+            
+            androidx.compose.runtime.LaunchedEffect(channelId) {
+                chatRepository.getDMChannel(channelId).onSuccess { channel ->
+                    val currentUserId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+                    val otherProfile = channel?.getOtherParticipant(currentUserId ?: "")
+                    otherUserNameState.value = otherProfile?.displayName ?: "Chat"
+                    otherUserPhotoState.value = otherProfile?.photoUrl
+                    otherUserIdState.value = otherProfile?.userId
+                }
+            }
+            
+            com.example.tripglide.ui.chat.ChatScreen(
+                channelId = channelId,
+                chatType = com.example.tripglide.data.model.ChatType.DIRECT,
+                channelName = otherUserNameState.value,
+                channelImageUrl = otherUserPhotoState.value,
+                onBackClick = { navController.popBackStack() },
+                onProfileClick = { userId -> navController.navigate(Screen.UserProfile.createRoute(userId)) }
             )
         }
     }
