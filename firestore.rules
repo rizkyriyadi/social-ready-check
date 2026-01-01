@@ -94,6 +94,12 @@ service cloud.firestore {
           (request.resource.data.senderId == "SYSTEM" && request.resource.data.type == "SYSTEM")
         );
       }
+
+      // Audit Logs Subcollection
+      match /audit_logs/{logId} {
+        allow read: if isCircleMember(circleId);
+        allow create: if isCircleMember(circleId);
+      }
     }
   }
 }

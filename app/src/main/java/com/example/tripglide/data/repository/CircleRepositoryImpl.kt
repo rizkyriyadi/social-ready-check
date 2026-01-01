@@ -1,5 +1,6 @@
 package com.example.tripglide.data.repository
 
+import com.example.tripglide.data.model.AuditLog
 import com.example.tripglide.data.model.ChatMessage
 import com.example.tripglide.data.model.Circle
 import com.example.tripglide.data.model.CircleMember
@@ -132,19 +133,59 @@ class CircleRepositoryImpl @Inject constructor(
     }
 
     override suspend fun updateCircleInfo(circleId: String, newName: String?, newImageUrl: String?): Result<Unit> {
+        val currentUserId = getCurrentUserId() ?: return Result.failure(Exception("Not logged in"))
+        
         return try {
-            val updates = mutableMapOf<String, Any>()
-            if (newName != null) updates["name"] = newName
-            if (newImageUrl != null) updates["imageUrl"] = newImageUrl
-            
-            if (updates.isNotEmpty()) {
+            val userDoc = firestore.collection("users").document(currentUserId).get().await()
+            val user = userDoc.toObject(User::class.java) ?: return Result.failure(Exception("User not found"))
+
+            firestore.runTransaction { transaction ->
+                val circleRef = circlesCollection.document(circleId)
+                val logRef = circleRef.collection("audit_logs").document()
+                
+                val updates = mutableMapOf<String, Any>()
+                if (newName != null) updates["name"] = newName
+                if (newImageUrl != null) updates["imageUrl"] = newImageUrl
                 updates["updatedAt"] = FieldValue.serverTimestamp()
-                circlesCollection.document(circleId).update(updates).await()
-            }
+                
+                transaction.update(circleRef, updates)
+                
+                val actionType = if (newName != null && newImageUrl != null) "UPDATED_INFO" 
+                                 else if (newName != null) "UPDATED_NAME" 
+                                 else "UPDATED_PHOTO"
+                                 
+                val details = if (newName != null) "Changed name to $newName" else "Updated circle photo"
+
+                val log = hashMapOf(
+                    "actorId" to currentUserId,
+                    "actorName" to user.displayName,
+                    "actionType" to actionType,
+                    "details" to details,
+                    "timestamp" to FieldValue.serverTimestamp()
+                )
+                transaction.set(logRef, log)
+            }.await()
+            
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    override fun getCircleActivityLogs(circleId: String): Flow<List<AuditLog>> = callbackFlow {
+        val listener = circlesCollection.document(circleId)
+            .collection("audit_logs")
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .limit(10)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                val logs = snapshot?.documents?.mapNotNull { it.toObject(AuditLog::class.java) } ?: emptyList()
+                trySend(logs)
+            }
+        awaitClose { listener.remove() }
     }
 
     // ==================== READ ====================

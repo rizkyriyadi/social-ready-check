@@ -1,5 +1,6 @@
 package com.example.tripglide.data.repository
 
+import com.example.tripglide.data.model.AuditLog
 import com.example.tripglide.data.model.ChatMessage
 import com.example.tripglide.data.model.Circle
 import com.example.tripglide.data.model.CircleMember
@@ -87,6 +88,14 @@ interface CircleRepository {
      * @return Result indicating success or failure
      */
     suspend fun updateCircleInfo(circleId: String, newName: String?, newImageUrl: String?): Result<Unit>
+
+    /**
+     * Gets recent activity logs for a circle.
+     * 
+     * @param circleId The circle document ID
+     * @return Flow emitting list of recent audit logs
+     */
+    fun getCircleActivityLogs(circleId: String): Flow<List<AuditLog>>
 
     /**
      * Joins an existing circle.
