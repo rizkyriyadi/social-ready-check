@@ -1,7 +1,9 @@
 package com.example.tripglide.data.model
 
 import com.google.firebase.Timestamp
+import com.google.firebase.firestore.IgnoreExtraProperties
 
+@IgnoreExtraProperties
 data class User(
     val uid: String = "",
     val displayName: String = "",
@@ -19,6 +21,7 @@ data class User(
     val onboardingCompleted: Boolean = false,
     val contentCreator: Boolean = false,
     val online: Boolean = false,
+    val fcmToken: String? = null,
     val socialStats: SocialStats = SocialStats(),
     val gamingStats: GamingStats = GamingStats(),
     val preferences: UserPreferences = UserPreferences(),

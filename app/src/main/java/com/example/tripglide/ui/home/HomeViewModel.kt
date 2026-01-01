@@ -111,9 +111,37 @@ class HomeViewModel(
         _creationState.value = CreateCircleUiState.Idle
     }
 
+    private val _joinState = MutableStateFlow<JoinCircleUiState>(JoinCircleUiState.Idle)
+    val joinState: StateFlow<JoinCircleUiState> = _joinState.asStateFlow()
+
+    fun joinCircleByCode(code: String) {
+        if (code.isBlank()) return
+        
+        viewModelScope.launch {
+            _joinState.value = JoinCircleUiState.Loading
+            val result = circleRepository.joinCircleByCode(code)
+            if (result.isSuccess) {
+                _joinState.value = JoinCircleUiState.Success
+            } else {
+                _joinState.value = JoinCircleUiState.Error(result.exceptionOrNull()?.message ?: "Unknown error")
+            }
+        }
+    }
+
+    fun resetJoinState() {
+        _joinState.value = JoinCircleUiState.Idle
+    }
+
     fun signOut() {
         authRepository.signOut()
     }
+}
+
+sealed interface JoinCircleUiState {
+    data object Idle : JoinCircleUiState
+    data object Loading : JoinCircleUiState
+    data object Success : JoinCircleUiState
+    data class Error(val message: String) : JoinCircleUiState
 }
 
 sealed interface CreateCircleUiState {

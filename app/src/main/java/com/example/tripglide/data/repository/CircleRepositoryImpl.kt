@@ -13,6 +13,7 @@ import com.google.firebase.firestore.Query
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
@@ -58,7 +59,7 @@ class CircleRepositoryImpl @Inject constructor(
 
                 // Build circle data
                 val circle = hashMapOf(
-                    "id" to newCircleId,
+
                     "name" to name,
                     "game" to game,
                     "region" to region,
@@ -111,7 +112,7 @@ class CircleRepositoryImpl @Inject constructor(
                 // Add system message for circle creation
                 val systemMessageRef = circleRef.collection("messages").document()
                 val systemMessage = hashMapOf(
-                    "id" to systemMessageRef.id,
+
                     "senderId" to "SYSTEM",
                     "senderName" to "System",
                     "senderPhotoUrl" to "",
@@ -125,6 +126,22 @@ class CircleRepositoryImpl @Inject constructor(
             }.await()
 
             Result.success(circleId)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun updateCircleInfo(circleId: String, newName: String?, newImageUrl: String?): Result<Unit> {
+        return try {
+            val updates = mutableMapOf<String, Any>()
+            if (newName != null) updates["name"] = newName
+            if (newImageUrl != null) updates["imageUrl"] = newImageUrl
+            
+            if (updates.isNotEmpty()) {
+                updates["updatedAt"] = FieldValue.serverTimestamp()
+                circlesCollection.document(circleId).update(updates).await()
+            }
+            Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -210,6 +227,41 @@ class CircleRepositoryImpl @Inject constructor(
         awaitClose { listener.remove() }
     }
 
+    override fun getFullMembers(circleId: String): Flow<List<User>> = callbackFlow {
+        val listener = circlesCollection.document(circleId)
+            .collection("members")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+
+                val memberIds = snapshot?.documents?.mapNotNull { it.getString("userId") } ?: emptyList()
+
+                if (memberIds.isEmpty()) {
+                    trySend(emptyList())
+                } else {
+                    launch {
+                        try {
+                            val users = mutableListOf<User>()
+                            memberIds.chunked(10).forEach { chunk ->
+                                val chunkSnapshot = firestore.collection("users")
+                                    .whereIn(com.google.firebase.firestore.FieldPath.documentId(), chunk)
+                                    .get()
+                                    .await()
+                                users.addAll(chunkSnapshot.toObjects(User::class.java))
+                            }
+                            trySend(users)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                }
+            }
+        awaitClose { listener.remove() }
+    }
+
+
     override fun getMediaMessages(circleId: String, types: List<String>): Flow<List<ChatMessage>> = callbackFlow {
         val listener = circlesCollection.document(circleId)
             .collection("messages")
@@ -250,7 +302,7 @@ class CircleRepositoryImpl @Inject constructor(
 
                 // Build message data
                 val messageData = hashMapOf(
-                    "id" to messageRef.id,
+
                     "senderId" to currentUserId,
                     "senderName" to user.displayName,
                     "senderPhotoUrl" to user.photoUrl,
@@ -350,7 +402,7 @@ class CircleRepositoryImpl @Inject constructor(
                 // Add system message
                 val systemMessageRef = circleRef.collection("messages").document()
                 val systemMessage = hashMapOf(
-                    "id" to systemMessageRef.id,
+
                     "senderId" to "SYSTEM",
                     "senderName" to "System",
                     "senderPhotoUrl" to "",
@@ -439,7 +491,7 @@ class CircleRepositoryImpl @Inject constructor(
                     // Add system message
                     val systemMessageRef = circleRef.collection("messages").document()
                     val systemMessage = hashMapOf(
-                        "id" to systemMessageRef.id,
+
                         "senderId" to "SYSTEM",
                         "senderName" to "System",
                         "senderPhotoUrl" to "",

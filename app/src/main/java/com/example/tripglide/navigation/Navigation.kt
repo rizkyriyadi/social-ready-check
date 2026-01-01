@@ -30,6 +30,13 @@ sealed class Screen(val route: String) {
     object UserProfile : Screen("user_profile/{uid}") {
         fun createRoute(uid: String) = "user_profile/$uid"
     }
+    object CreateSquad : Screen("create_squad")
+    object CircleSettings : Screen("circle_settings/{circleId}") {
+        fun createRoute(circleId: String) = "circle_settings/$circleId"
+    }
+    object MembersList : Screen("members_list/{circleId}") {
+        fun createRoute(circleId: String) = "members_list/$circleId"
+    }
 }
 
 @Composable
@@ -54,6 +61,11 @@ fun TripGlideNavHost(
         composable(Screen.Home.route) {
             com.example.tripglide.ui.main.MainScreen(navController = navController)
         }
+        composable(Screen.CreateSquad.route) {
+            com.example.tripglide.ui.squads.CreateSquadScreen(
+                onBackClick = { navController.popBackStack() }
+            )
+        }
         composable(
             route = Screen.CircleDetail.route,
             arguments = listOf(androidx.navigation.navArgument("circleId") { type = androidx.navigation.NavType.StringType })
@@ -62,7 +74,32 @@ fun TripGlideNavHost(
             com.example.tripglide.ui.detail.CircleDetailScreen(
                 circleId = circleId,
                 onBackClick = { navController.popBackStack() },
-                onNavigateToChat = { navController.navigate(Screen.Chat.createRoute(circleId)) }
+                onNavigateToChat = { navController.navigate(Screen.Chat.createRoute(circleId)) },
+                onNavigateToSettings = { navController.navigate(Screen.CircleSettings.createRoute(circleId)) }
+            )
+        }
+        composable(
+            route = Screen.CircleSettings.route,
+            arguments = listOf(androidx.navigation.navArgument("circleId") { type = androidx.navigation.NavType.StringType })
+        ) { backStackEntry ->
+            val circleId = backStackEntry.arguments?.getString("circleId") ?: ""
+            com.example.tripglide.ui.detail.CircleSettingsScreen(
+                circleId = circleId,
+                onBackClick = { navController.popBackStack() },
+                onNavigateToMembers = { navController.navigate(Screen.MembersList.createRoute(circleId)) },
+                onLeaveCircle = { 
+                    navController.popBackStack(Screen.Home.route, inclusive = false) 
+                }
+            )
+        }
+        composable(
+            route = Screen.MembersList.route,
+            arguments = listOf(androidx.navigation.navArgument("circleId") { type = androidx.navigation.NavType.StringType })
+        ) { backStackEntry ->
+            val circleId = backStackEntry.arguments?.getString("circleId") ?: ""
+            com.example.tripglide.ui.detail.MemberListScreen(
+                circleId = circleId,
+                onBackClick = { navController.popBackStack() }
             )
         }
         composable(

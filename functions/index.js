@@ -202,3 +202,72 @@ exports.removeFriend = functions.https.onCall(async (request) => {
     throw new functions.https.HttpsError("internal", "Failed to remove friend");
   }
 });
+
+/**
+ * Cloud Function triggered when a user is added to a circle.
+ * Sends an FCM notification to the added user.
+ */
+exports.sendSquadInviteNotification = functions.firestore.onDocumentCreated(
+  "circles/{circleId}/members/{memberDocId}",
+  async (event) => {
+    const snapshot = event.data;
+    if (!snapshot) {
+        console.log("No data associated with the event");
+        return;
+    }
+    const memberData = snapshot.data();
+    const circleId = event.params.circleId;
+    // Assuming the document contains userId, or the document ID IS the userId. 
+    // The prompt says "Get the userId from the created document data."
+    const userId = memberData.userId || event.params.memberDocId; 
+
+    if (!userId) {
+        console.log("No userId found in member document");
+        return;
+    }
+
+    try {
+        // 1. Fetch Circle Name
+        const circleDoc = await db.collection("circles").doc(circleId).get();
+        const circleName = circleDoc.exists ? circleDoc.data().name : "Unknown Circle";
+
+        // 2. Fetch User's FCM Token
+        const userDoc = await db.collection("users").doc(userId).get();
+        if (!userDoc.exists) {
+            console.log(`User ${userId} not found`);
+            return;
+        }
+        
+        const userData = userDoc.data();
+        // Check requested path first, then fallback to metadata
+        const fcmToken = userData.fcmToken || userData?.metadata?.fcmToken;
+
+        if (!fcmToken) {
+            console.log(`No FCM token found for user ${userId}`);
+            return;
+        }
+
+        // 3. Construct Payload
+        const payload = {
+            token: fcmToken,
+            notification: {
+                title: "SQUAD SUMMON!",
+                body: `You have been added to the squad: ${circleName}.`,
+            },
+            data: {
+                click_action: "FLUTTER_NOTIFICATION_CLICK", 
+                screen: "squad_detail",
+                circleId: circleId
+            }
+        };
+
+        // 4. Send Notification
+        await admin.messaging().send(payload);
+        console.log(`Notification sent to user ${userId} for circle ${circleId}`);
+
+    } catch (error) {
+        console.error("Error sending squad invite notification:", error);
+    }
+  }
+);
+

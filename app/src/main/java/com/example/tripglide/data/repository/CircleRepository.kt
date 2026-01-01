@@ -3,6 +3,7 @@ package com.example.tripglide.data.repository
 import com.example.tripglide.data.model.ChatMessage
 import com.example.tripglide.data.model.Circle
 import com.example.tripglide.data.model.CircleMember
+import com.example.tripglide.data.model.User
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -68,6 +69,24 @@ interface CircleRepository {
      * @return Flow emitting updated list of members
      */
     fun getCircleMembers(circleId: String): Flow<List<CircleMember>>
+
+    /**
+     * Gets full user profiles for all members of a circle.
+     * 
+     * @param circleId The circle document ID
+     * @return Flow emitting updated list of User objects
+     */
+    fun getFullMembers(circleId: String): Flow<List<User>>
+
+    /**
+     * Updates circle information (name, image).
+     * 
+     * @param circleId The circle document ID
+     * @param newName New name (optional)
+     * @param newImageUrl New image URL (optional)
+     * @return Result indicating success or failure
+     */
+    suspend fun updateCircleInfo(circleId: String, newName: String?, newImageUrl: String?): Result<Unit>
 
     /**
      * Joins an existing circle.

@@ -2,6 +2,7 @@ package com.example.tripglide.data.model
 
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
+import com.google.firebase.firestore.IgnoreExtraProperties
 import com.google.firebase.firestore.ServerTimestamp
 
 /**
@@ -9,12 +10,15 @@ import com.google.firebase.firestore.ServerTimestamp
  * 
  * Firestore path: circles/{circleId}
  */
+@IgnoreExtraProperties
 data class Circle(
     @DocumentId
-    val id: String = "",
+    val documentId: String = "",
+    val id: String? = null, // Handle legacy 'id' field if present
     val name: String = "",
     val game: String = "",
     val region: String = "",
+    val imageUrl: String? = null,
     val ownerId: String = "",
     val memberIds: List<String> = emptyList(), // Denormalized for array-contains queries
     val code: String = "", // Unique invite code
@@ -52,6 +56,7 @@ data class CircleMetadata(
  * Circle configuration toggles.
  */
 data class CircleSettings(
+    @get:com.google.firebase.firestore.PropertyName("isPublic")
     val isPublic: Boolean = false,
     val allowMediaUpload: Boolean = true,
     val muteNotifications: Boolean = false
@@ -73,7 +78,7 @@ enum class MemberRole {
  */
 data class CircleMember(
     @DocumentId
-    val odcumentId: String = "", // Will match userId
+    val documentId: String = "", // Will match userId
     val userId: String = "",
     val displayName: String = "",
     val photoUrl: String = "",
@@ -111,7 +116,7 @@ enum class MessageType {
  */
 data class ChatMessage(
     @DocumentId
-    val id: String = "",
+    val documentId: String = "",
     val senderId: String = "",
     val senderName: String = "",
     val senderPhotoUrl: String = "",

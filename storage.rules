@@ -1,32 +1,9 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    
-    // Helper function to check if user is authenticated
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-    
-    // Helper function to check if the user is accessing their own file
-    // Assumes files are stored in paths like: /users/{userId}/...
-    function isOwner(userId) {
-      return request.auth.uid == userId;
-    }
-    // Profile Images
-    // Path: users/{userId}/profile.jpg
-    match /users/{userId}/{allPaths=**} {
-      // Allow anyone to view profile images
-      allow read: if isAuthenticated();
-      // Only allow owner to upload/delete
-      // Limit size to 5MB and image types
-      allow write: if isAuthenticated() && isOwner(userId)
-                   && request.resource.size < 5 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*');
-    }
-    
-    // Default: Deny all
-    match /{allPaths=**} {
-      allow read, write: if false;
+    match /circle_images/{circleId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
     }
   }
 }

@@ -1,6 +1,20 @@
 {
     "indexes": [
         {
+            "collectionGroup": "circles",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "memberIds",
+                    "arrayConfig": "CONTAINS"
+                },
+                {
+                    "fieldPath": "updatedAt",
+                    "order": "DESCENDING"
+                }
+            ]
+        },
+        {
             "collectionGroup": "friends",
             "queryScope": "COLLECTION",
             "fields": [
@@ -25,16 +39,6 @@
                 {
                     "fieldPath": "createdAt",
                     "order": "DESCENDING"
-                }
-            ]
-        },
-        {
-            "collectionGroup": "members",
-            "queryScope": "COLLECTION",
-            "fields": [
-                {
-                    "fieldPath": "joinedAt",
-                    "order": "ASCENDING"
                 }
             ]
         }

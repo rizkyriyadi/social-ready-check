@@ -241,4 +241,22 @@ class AuthRepository(
             Result.failure(e)
         }
     }
+    suspend fun getUsersByIds(ids: List<String>): Result<List<User>> {
+        if (ids.isEmpty()) return Result.success(emptyList())
+        return try {
+            // Firestore 'in' query supports max 10 values.
+            // For larger lists, we need to chunk queries.
+            val users = mutableListOf<User>()
+            ids.chunked(10).forEach { chunk ->
+                val snapshot = firestore.collection("users")
+                    .whereIn("uid", chunk)
+                    .get()
+                    .await()
+                users.addAll(snapshot.toObjects(User::class.java))
+            }
+            Result.success(users)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }

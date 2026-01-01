@@ -21,11 +21,13 @@ import com.example.tripglide.ui.social.SocialViewModel
 import com.example.tripglide.ui.social.SocialViewModelFactory
 import com.example.tripglide.ui.social.FriendsScreen
 
+import androidx.compose.runtime.saveable.rememberSaveable
+
 @Composable
 fun MainScreen(
     navController: NavHostController
 ) {
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val context = LocalContext.current
     
     // ViewModel for Friends Tab
@@ -47,7 +49,8 @@ fun MainScreen(
                 1 -> SquadsScreen(
                     onCircleClick = { circleId -> 
                         navController.navigate(Screen.CircleDetail.createRoute(circleId)) 
-                    }
+                    },
+                    onNavigateToCreate = { navController.navigate(Screen.CreateSquad.route) }
                 )
                 2 -> FriendsScreen(
                     viewModel = socialViewModel,

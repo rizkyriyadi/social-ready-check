@@ -10,63 +10,90 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Check if user is accessing their own document
+    // Check if user is accessing their own document/resource
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Users Collection
-    // Public read mainly for profile viewing, but write restricted to owner
+    // Check if user is a member of the circle (via subcollection existence)
+    function isCircleMember(circleId) {
+      return isAuthenticated() && exists(/databases/$(database)/documents/circles/$(circleId)/members/$(request.auth.uid));
+    }
+
+    // --- Users Collection ---
     match /users/{userId} {
       allow read: if isAuthenticated();
       allow write: if isOwner(userId);
 
-      // Friends Subcollection
-      // Allow owner to write, OR allow other user to add/remove themselves
+      // Friends Subcollection (Reciprocal)
       match /friends/{friendId} {
         allow read: if isAuthenticated();
-        // Owner can do anything with their friends list
+        // Owner can manage their list
         allow write: if isOwner(userId);
-        // A user can add/remove THEMSELVES from another user's friends list
-        // This is needed for reciprocal friend additions/removals
+        // Allow the *other* user to add/remove THEMSELVES (reciprocal logic)
         allow create, delete: if isAuthenticated() && request.auth.uid == friendId;
       }
-      
-      // Circles Subcollection
-      match /circles/{circleId} {
-        allow read: if isAuthenticated();
-        allow write: if isOwner(userId);
-      }
     }
 
-    // Usernames Collection (for Uniqueness)
-    // Document ID is the username itself
+    // --- Usernames ---
     match /usernames/{username} {
-      // Anyone can read to check availability
       allow read: if true;
-      
-      // Only create if the stored uid matches the authenticated user
       allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
-      
-      // Only delete if the stored uid matches the requester (e.g. changing username)
       allow delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
-      
-      // Prevent updating someone else's username claim
-      allow update: if false; 
     }
 
-    // Friend Requests
+    // --- Friend Requests ---
     match /friend_requests/{requestId} {
-      // Allow read if user is sender or receiver
-      allow read: if isAuthenticated() && 
-        (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid);
+      // Allow read/write if user is sender or receiver
+      allow read, write: if isAuthenticated() && 
+        (resource.data.senderId == request.auth.uid || 
+         resource.data.receiverId == request.auth.uid ||
+         request.resource.data.senderId == request.auth.uid ||
+         request.resource.data.receiverId == request.auth.uid);
+    }
+
+    // --- Circles (Squads) ---
+    match /circles/{circleId} {
+      // 1. Browsing/Listing: Allow auth users to read circles
+      allow read: if isAuthenticated();
       
-      // Allow create if sender is the authenticated user
-      allow create: if isAuthenticated() && request.resource.data.senderId == request.auth.uid;
+      // 2. Creation: Allow auth users to create circles
+      allow create: if isAuthenticated();
       
-      // Allow update (accept/reject) if user is involved
-      allow update: if isAuthenticated() && 
-        (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid);
+      // 3. Updates: 
+      // - Updating metadata/lastMessage (Members)
+      // - Joining/Leaving (User adding/removing self from memberIds)
+      allow update: if isAuthenticated(); 
+      
+      // 4. Deletion: Allow owner to delete (e.g. when last member leaves)
+      allow delete: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
+      // Refined logic ideally checks if user is in 'memberIds' or adding self.
+      
+      // Members Subcollection
+      match /members/{memberId} {
+        allow read: if isAuthenticated();
+        // User can write their own member document (Join/Leave)
+        // OR the Circle Owner can manage members (e.g. promote new leader)
+        allow write: if isOwner(memberId) || 
+                     (exists(/databases/$(database)/documents/circles/$(circleId)) && 
+                      get(/databases/$(database)/documents/circles/$(circleId)).data.ownerId == request.auth.uid);
+      }
+
+      // Messages Subcollection
+      // Messages Subcollection
+      match /messages/{messageId} {
+        // Only members can read/send messages
+        allow read: if isCircleMember(circleId);
+        
+        allow create: if isAuthenticated() && (
+          // 1. Regular User Message: Must be member (or creating circle) AND sender matches auth
+          ((isCircleMember(circleId) || !exists(/databases/$(database)/documents/circles/$(circleId)))
+           && request.resource.data.senderId == request.auth.uid)
+          ||
+          // 2. System Message: Allow 'SYSTEM' sender (used during Join/Leave/Create)
+          (request.resource.data.senderId == "SYSTEM" && request.resource.data.type == "SYSTEM")
+        );
+      }
     }
   }
 }
