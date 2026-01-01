@@ -25,8 +25,59 @@ data class User(
     val socialStats: SocialStats = SocialStats(),
     val gamingStats: GamingStats = GamingStats(),
     val preferences: UserPreferences = UserPreferences(),
-    val metadata: UserMetadata = UserMetadata()
+    val metadata: UserMetadata = UserMetadata(),
+    // Linked Game Accounts
+    val linkedAccounts: LinkedGameAccounts = LinkedGameAccounts()
 )
+
+/**
+ * Container for all linked game accounts
+ */
+@IgnoreExtraProperties
+data class LinkedGameAccounts(
+    val dota2: DotaLinkedAccount? = null
+    // Future: valorant, lol, etc.
+)
+
+/**
+ * Dota 2 Linked Account stored in Firestore
+ */
+@IgnoreExtraProperties
+data class DotaLinkedAccount(
+    val steamId: String = "",
+    val accountId: Long = 0,
+    val personaName: String = "",
+    val avatarUrl: String = "",
+    val profileUrl: String = "",
+    val rankTier: Int = 0,
+    val leaderboardRank: Int? = null,
+    val mmrEstimate: Int? = null,
+    val linkedAt: Long = System.currentTimeMillis()
+) {
+    /**
+     * Get the medal name from rank_tier
+     * rank_tier is a 2-digit number: first digit = medal (1-8), second digit = stars (0-5)
+     */
+    val medalName: String get() {
+        if (rankTier == 0) return "Uncalibrated"
+        val medal = rankTier / 10
+        val stars = rankTier % 10
+        val medalNames = listOf(
+            "", "Herald", "Guardian", "Crusader", "Archon",
+            "Legend", "Ancient", "Divine", "Immortal"
+        )
+        return if (medal in 1..8) {
+            if (medal == 8) {
+                leaderboardRank?.let { "Immortal #$it" } ?: "Immortal"
+            } else {
+                "${medalNames[medal]} $stars"
+            }
+        } else "Unknown"
+    }
+    
+    val medalTier: Int get() = rankTier / 10
+    val medalStars: Int get() = rankTier % 10
+}
 
 data class SocialStats(
     val followersCount: Int = 0,

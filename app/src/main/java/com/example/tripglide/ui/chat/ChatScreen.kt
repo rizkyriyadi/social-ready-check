@@ -29,6 +29,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.tripglide.data.model.*
 import com.example.tripglide.ui.chat.components.*
+import com.example.tripglide.ui.chat.components.DotaMenuBottomSheet
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -87,6 +88,9 @@ fun ChatScreen(
     // Full-screen media viewer state
     var selectedImageUrl by remember { mutableStateOf<String?>(null) }
     var selectedVideoUrl by remember { mutableStateOf<String?>(null) }
+    
+    // Dota menu state (for GROUP chats only)
+    var showDotaMenu by remember { mutableStateOf(false) }
 
     // Show error toast
     LaunchedEffect(uiState.error) {
@@ -147,6 +151,29 @@ fun ChatScreen(
             onDismiss = { selectedVideoUrl = null }
         )
     }
+    
+    // Dota Menu Bottom Sheet (for GROUP chats)
+    if (showDotaMenu && chatType == ChatType.GROUP) {
+        DotaMenuBottomSheet(
+            onDismiss = { showDotaMenu = false },
+            onViewHeroStats = { 
+                showDotaMenu = false
+                Toast.makeText(context, "Hero Stats coming soon!", Toast.LENGTH_SHORT).show()
+            },
+            onViewRecentMatches = {
+                showDotaMenu = false
+                Toast.makeText(context, "Recent Matches coming soon!", Toast.LENGTH_SHORT).show()
+            },
+            onViewLeaderboard = {
+                showDotaMenu = false
+                Toast.makeText(context, "Leaderboard coming soon!", Toast.LENGTH_SHORT).show()
+            },
+            onStartPartyFinder = {
+                showDotaMenu = false
+                Toast.makeText(context, "Party Finder coming soon!", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -155,7 +182,9 @@ fun ChatScreen(
                 channelImageUrl = channelImageUrl,
                 onBackClick = onBackClick,
                 onInfoClick = onInfoClick,
-                typingUsers = uiState.typingUsers
+                typingUsers = uiState.typingUsers,
+                showDotaButton = chatType == ChatType.GROUP,
+                onDotaClick = { showDotaMenu = true }
             )
         },
         bottomBar = {
@@ -198,11 +227,15 @@ fun ChatScreen(
                     EmptyChatState()
                 }
                 else -> {
+                    // Get user profiles for Dota ranks
+                    val userProfiles by viewModel.userProfiles.collectAsState()
+                    
                     // Message list
                     MessageList(
                         messages = uiState.messages,
                         listState = listState,
                         isLoadingMore = uiState.isLoadingMore,
+                        userProfiles = userProfiles,
                         onImageClick = { url -> selectedImageUrl = url },
                         onVideoClick = { url -> selectedVideoUrl = url },
                         onProfileClick = onProfileClick
@@ -233,7 +266,9 @@ private fun ChatTopBar(
     channelImageUrl: String?,
     onBackClick: () -> Unit,
     onInfoClick: (() -> Unit)?,
-    typingUsers: List<ParticipantProfile>
+    typingUsers: List<ParticipantProfile>,
+    showDotaButton: Boolean = false,
+    onDotaClick: (() -> Unit)? = null
 ) {
     TopAppBar(
         title = {
@@ -290,6 +325,26 @@ private fun ChatTopBar(
             }
         },
         actions = {
+            // Dota 2 button (only for group chats)
+            if (showDotaButton && onDotaClick != null) {
+                IconButton(onClick = onDotaClick) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFFF6046).copy(alpha = 0.2f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "D2",
+                            color = Color(0xFFFF6046),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+            }
+            
             if (onInfoClick != null) {
                 IconButton(onClick = onInfoClick) {
                     Icon(
@@ -311,6 +366,7 @@ private fun MessageList(
     messages: List<DisplayMessage>,
     listState: LazyListState,
     isLoadingMore: Boolean,
+    userProfiles: Map<String, com.example.tripglide.data.model.User>,
     onImageClick: (String) -> Unit,
     onVideoClick: (String) -> Unit,
     onProfileClick: ((String) -> Unit)? = null
@@ -331,9 +387,11 @@ private fun MessageList(
                     DateDivider(timestamp = displayMessage.message.createdAt)
                 }
 
-                // Message bubble
+                // Message bubble with sender profile (includes Dota rank)
+                val senderProfile = userProfiles[displayMessage.message.senderId]
                 MessageBubble(
                     displayMessage = displayMessage,
+                    senderProfile = senderProfile,
                     onImageClick = onImageClick,
                     onVideoClick = onVideoClick,
                     onProfileClick = onProfileClick

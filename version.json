@@ -1,0 +1,7 @@
+{
+  "versionCode": 4,
+  "versionName": "1.2.1",
+  "releaseNotes": "- Fixed DM infinite loading issue\n- New app launcher icon\n- Dota 2 logo in menu\n- Summon sound (No Surprises - Radiohead)\n- OTA update system via Settings\n- Signed APK with keystore",
+  "downloadUrl": "https://github.com/rizkyriyadi/social-ready-check/releases/download/v1.2.1/jack-and-mei-v1.2.1-signed.apk",
+  "forceUpdate": false
+}

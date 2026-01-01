@@ -16,6 +16,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
@@ -49,6 +50,10 @@ class ChatViewModel(
     // Participant profiles for read receipts
     private val _participantProfiles = MutableStateFlow<Map<String, ParticipantProfile>>(emptyMap())
     val participantProfiles: StateFlow<Map<String, ParticipantProfile>> = _participantProfiles.asStateFlow()
+    
+    // Full user profiles (with Dota ranks)
+    private val _userProfiles = MutableStateFlow<Map<String, com.example.tripglide.data.model.User>>(emptyMap())
+    val userProfiles: StateFlow<Map<String, com.example.tripglide.data.model.User>> = _userProfiles.asStateFlow()
 
     // Channel info (for DM header display)
     private val _dmChannel = MutableStateFlow<DMChannel?>(null)
@@ -91,6 +96,10 @@ class ChatViewModel(
                             error = null
                         )
                     }
+                    
+                    // Fetch user profiles for senders (to get Dota ranks)
+                    val senderIds = messages.map { it.senderId }.distinct().filter { it != "SYSTEM" }
+                    fetchUserProfiles(senderIds)
                 }
         }
 
@@ -408,6 +417,51 @@ class ChatViewModel(
 
     fun clearUploadState() {
         _uiState.update { it.copy(uploadState = MediaUploadState.Idle) }
+    }
+    
+    /**
+     * Fetch full user profiles for message senders (includes Dota ranks)
+     */
+    private fun fetchUserProfiles(userIds: List<String>) {
+        if (userIds.isEmpty()) return
+        
+        // Only fetch profiles we don't already have
+        val newUserIds = userIds.filter { !_userProfiles.value.containsKey(it) }
+        if (newUserIds.isEmpty()) return
+        
+        viewModelScope.launch {
+            try {
+                val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                
+                // Fetch in batches of 10 (Firestore limit for whereIn)
+                newUserIds.chunked(10).forEach { batch ->
+                    val snapshot = firestore.collection("users")
+                        .whereIn(com.google.firebase.firestore.FieldPath.documentId(), batch)
+                        .get()
+                        .await()
+                    
+                    val users = snapshot.documents.mapNotNull { doc ->
+                        doc.toObject(com.example.tripglide.data.model.User::class.java)?.copy(uid = doc.id)
+                    }
+                    
+                    // Update user profiles map
+                    _userProfiles.update { current ->
+                        current + users.associateBy { it.uid }
+                    }
+                    
+                    Log.d(TAG, "📋 Loaded ${users.size} user profiles")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to fetch user profiles", e)
+            }
+        }
+    }
+    
+    /**
+     * Get user profile by ID
+     */
+    fun getUserProfile(userId: String): com.example.tripglide.data.model.User? {
+        return _userProfiles.value[userId]
     }
 
     override fun onCleared() {

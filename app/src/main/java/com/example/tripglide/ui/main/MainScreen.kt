@@ -14,6 +14,7 @@ import com.example.tripglide.ui.components.BottomNavBar
 import com.example.tripglide.ui.home.DashboardScreen
 import com.example.tripglide.ui.squads.SquadsScreen
 import com.example.tripglide.ui.profile.ProfileScreen
+import com.example.tripglide.ui.messages.DirectMessagesScreen
 
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -45,21 +46,35 @@ fun MainScreen(
     ) { paddingValues ->
         Box(modifier = Modifier.padding(paddingValues)) {
             when (selectedTab) {
-                0 -> DashboardScreen()
+                0 -> DashboardScreen(
+                    onChatClick = { channelId, chatType ->
+                        if (chatType == "DIRECT") {
+                            navController.navigate(Screen.DirectMessage.createRoute(channelId))
+                        } else {
+                            navController.navigate(Screen.Chat.createRoute(channelId))
+                        }
+                    }
+                )
                 1 -> SquadsScreen(
                     onCircleClick = { circleId -> 
                         navController.navigate(Screen.CircleDetail.createRoute(circleId)) 
                     },
                     onNavigateToCreate = { navController.navigate(Screen.CreateSquad.route) }
                 )
-                2 -> FriendsScreen(
+                2 -> DirectMessagesScreen(
+                    onMessageClick = { channelId ->
+                        navController.navigate(Screen.DirectMessage.createRoute(channelId))
+                    },
+                    onNewMessageClick = { navController.navigate(Screen.AddFriend.route) }
+                )
+                3 -> FriendsScreen(
                     viewModel = socialViewModel,
                     onFriendClick = { friendUid -> 
                          navController.navigate(Screen.UserProfile.createRoute(friendUid))
                     },
                     onAddFriendClick = { navController.navigate(Screen.AddFriend.route) }
                 )
-                3 -> ProfileScreen(
+                4 -> ProfileScreen(
                     onLogout = {
                         navController.navigate(Screen.Login.route) {
                             popUpTo(Screen.Home.route) { inclusive = true }

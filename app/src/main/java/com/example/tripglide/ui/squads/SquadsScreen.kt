@@ -346,29 +346,29 @@ fun SquadListContent(
                 
                 SearchBar()
                 
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Text(
-                    text = "Select your Squad",
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(horizontal = 24.dp)
-                )
+                // Filter section hidden for now
+                // Spacer(modifier = Modifier.height(24.dp))
+                // Text(
+                //     text = "Select your Squad",
+                //     style = MaterialTheme.typography.titleLarge,
+                //     modifier = Modifier.padding(horizontal = 24.dp)
+                // )
+                // Spacer(modifier = Modifier.height(16.dp))
+                // // Horizontal Categories
+                // LazyRow(
+                //     contentPadding = PaddingValues(horizontal = 24.dp),
+                //     horizontalArrangement = Arrangement.spacedBy(12.dp)
+                // ) {
+                //     items(listOf("All", "Dota 2", "Valorant", "Mobile Legends", "CS2", "Other")) { category ->
+                //         CategorySingleChip(
+                //             text = category,
+                //             isSelected = selectedFilter == category,
+                //             onClick = { onFilterSelect(category) }
+                //         )
+                //     }
+                // }
                 
                 Spacer(modifier = Modifier.height(16.dp))
-                
-                // Horizontal Categories
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 24.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(listOf("All", "Dota 2", "Valorant", "Mobile Legends", "CS2", "Other")) { category ->
-                        CategorySingleChip(
-                            text = category,
-                            isSelected = selectedFilter == category,
-                            onClick = { onFilterSelect(category) }
-                        )
-                    }
-                }
             }
         }
 

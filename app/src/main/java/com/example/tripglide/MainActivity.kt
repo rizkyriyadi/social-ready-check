@@ -1,13 +1,18 @@
 package com.example.tripglide
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
+import androidx.core.content.ContextCompat
 import com.example.tripglide.navigation.TripGlideNavHost
 import com.example.tripglide.ui.theme.TripGlideTheme
 
@@ -33,9 +38,23 @@ class MainActivity : ComponentActivity() {
         val chatType: String
     )
     
+    // Notification permission launcher for Android 13+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            Log.d(TAG, "Notification permission granted")
+        } else {
+            Log.w(TAG, "Notification permission denied")
+        }
+    }
+    
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
+        
+        // Request notification permission for Android 13+
+        requestNotificationPermission()
 
         // FCM Token Management
         FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
@@ -87,6 +106,31 @@ class MainActivity : ComponentActivity() {
             
             if (channelId != null && chatType != null) {
                 pendingChatNavigation = ChatNavigation(channelId, chatType)
+            }
+        }
+    }
+    
+    private fun requestNotificationPermission() {
+        // Only needed for Android 13 (API 33) and above
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            when {
+                ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED -> {
+                    // Permission already granted
+                    Log.d(TAG, "Notification permission already granted")
+                }
+                shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) -> {
+                    // Show rationale if needed, then request
+                    Log.d(TAG, "Showing notification permission rationale")
+                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+                else -> {
+                    // Request the permission directly
+                    Log.d(TAG, "Requesting notification permission")
+                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
             }
         }
     }

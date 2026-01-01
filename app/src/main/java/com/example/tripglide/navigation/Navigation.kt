@@ -42,6 +42,7 @@ sealed class Screen(val route: String) {
     object MembersList : Screen("members_list/{circleId}") {
         fun createRoute(circleId: String) = "members_list/$circleId"
     }
+    object SelectFriendForChat : Screen("select_friend_for_chat")
 }
 
 @Composable

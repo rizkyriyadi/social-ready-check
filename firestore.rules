@@ -142,7 +142,7 @@ service cloud.firestore {
       }
       
       // Read: Participants can read (check channelId OR participants array)
-      allow read: if isParticipantByChannelId();
+      allow read: if isParticipantByChannelId() || isDMParticipant();
       
       // Create: Only if user is one of the participants
       allow create: if isAuthenticated() && 
@@ -157,10 +157,11 @@ service cloud.firestore {
       
       // Messages Subcollection
       match /messages/{messageId} {
-        // Read: Only participants (check by channelId pattern)
+        // Read: Only participants (check by channelId pattern OR parent participants)
         allow read: if isAuthenticated() && (
           channelId.matches(request.auth.uid + '_.*') ||
-          channelId.matches('.*_' + request.auth.uid)
+          channelId.matches('.*_' + request.auth.uid) ||
+          request.auth.uid in get(/databases/$(database)/documents/chats/$(channelId)).data.participants
         );
         
         // Create: Sender must be participant AND senderId must match auth

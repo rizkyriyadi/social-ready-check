@@ -130,17 +130,30 @@ fun MessageBubble(
         Column(
             horizontalAlignment = if (isMe) Alignment.End else Alignment.Start
         ) {
-            // Sender name (for others, only on first message) - clickable
+            // Sender name with Dota rank (for others, only on first message) - clickable
             if (!isMe && isFirstInGroup) {
-                Text(
-                    text = senderProfile?.displayName ?: message.senderName,
-                    color = AccentBlue,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .padding(start = 4.dp, bottom = 2.dp)
                         .clickable { onProfileClick?.invoke(message.senderId) }
-                )
+                ) {
+                    Text(
+                        text = senderProfile?.displayName ?: message.senderName,
+                        color = AccentBlue,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    
+                    // Show Dota rank badge if linked
+                    senderProfile?.linkedAccounts?.dota2?.let { dota ->
+                        Spacer(modifier = Modifier.width(6.dp))
+                        DotaRankBadgeSmall(
+                            medalName = dota.medalName,
+                            medalTier = dota.medalTier
+                        )
+                    }
+                }
             }
 
             // Bubble
@@ -477,4 +490,51 @@ private fun isSameWeek(cal1: Calendar, cal2: Calendar): Boolean {
 
 private fun isSameYear(cal1: Calendar, cal2: Calendar): Boolean {
     return cal1.get(Calendar.YEAR) == cal2.get(Calendar.YEAR)
+}
+
+/**
+ * Small Dota rank badge for display next to usernames
+ */
+@Composable
+fun DotaRankBadgeSmall(
+    medalName: String,
+    medalTier: Int,
+    modifier: Modifier = Modifier
+) {
+    val badgeColor = getDotaMedalColor(medalTier)
+    
+    Box(
+        modifier = modifier
+            .background(
+                badgeColor.copy(alpha = 0.2f),
+                RoundedCornerShape(4.dp)
+            )
+            .padding(horizontal = 4.dp, vertical = 1.dp)
+    ) {
+        Text(
+            medalName,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Medium,
+            fontSize = 9.sp,
+            color = badgeColor
+        )
+    }
+}
+
+/**
+ * Get medal color based on tier (1-8)
+ */
+@Composable
+private fun getDotaMedalColor(tier: Int): Color {
+    return when (tier) {
+        1 -> Color(0xFF8B7355) // Herald
+        2 -> Color(0xFF8B8B8B) // Guardian
+        3 -> Color(0xFF4CAF50) // Crusader
+        4 -> Color(0xFF2196F3) // Archon
+        5 -> Color(0xFFFFC107) // Legend
+        6 -> Color(0xFF9C27B0) // Ancient
+        7 -> Color(0xFFE91E63) // Divine
+        8 -> Color(0xFFFFD700) // Immortal
+        else -> Color.Gray
+    }
 }

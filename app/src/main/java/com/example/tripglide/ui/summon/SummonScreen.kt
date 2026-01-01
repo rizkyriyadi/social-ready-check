@@ -1,5 +1,6 @@
 package com.example.tripglide.ui.summon
 
+import android.media.MediaPlayer
 import android.util.Log
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -22,6 +23,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -29,6 +31,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.example.tripglide.R
 import com.example.tripglide.data.model.Summon
 import com.example.tripglide.data.model.SummonResponseStatus
 import com.example.tripglide.data.model.SummonStatus
@@ -48,16 +51,31 @@ fun SummonScreen(
     isInitiator: Boolean = false,
     onFinish: () -> Unit
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val circleRepo = remember { CircleRepositoryImpl() }
-    var timeLeft by remember { mutableStateOf(30) }
+    var timeLeft by remember { mutableStateOf(60) }
     var hasResponded by remember { mutableStateOf(isInitiator) } // Initiator already responded
+    
+    // Media player for summon sound
+    val mediaPlayer = remember {
+        MediaPlayer.create(context, R.raw.summon_sound).apply {
+            isLooping = true
+        }
+    }
     
     // Track summon status for initiator
     val summon by circleRepo.getActiveSummon(circleId, summonId).collectAsState(initial = null)
     
-    Log.d(TAG, "🎯 SummonScreen: isInitiator=$isInitiator, circleId=$circleId, summonId=$summonId")
-
+    // Start playing sound and cleanup on dispose
+    DisposableEffect(Unit) {
+        mediaPlayer.start()
+        onDispose {
+            mediaPlayer.stop()
+            mediaPlayer.release()
+        }
+    }
+    
     // Countdown timer
     LaunchedEffect(Unit) {
         while (timeLeft > 0) {
@@ -65,7 +83,6 @@ fun SummonScreen(
             timeLeft--
         }
         if (!hasResponded && !isInitiator) {
-            Log.d(TAG, "⏰ Timeout - responding with TIMEOUT")
             circleRepo.respondToSummon(circleId, summonId, SummonResponseStatus.TIMEOUT.name)
         }
         onFinish()
@@ -74,15 +91,12 @@ fun SummonScreen(
     // Check summon status for both initiator and receiver
     LaunchedEffect(summon) {
         summon?.let { s ->
-            Log.d(TAG, "📊 Summon status: ${s.status}, responses: ${s.responses}")
             when (s.status) {
                 SummonStatus.SUCCESS.name -> {
-                    Log.d(TAG, "✅ Summon SUCCESS - all accepted!")
                     delay(1500)
                     onFinish()
                 }
                 SummonStatus.FAILED.name -> {
-                    Log.d(TAG, "❌ Summon FAILED - someone declined")
                     delay(1500)
                     onFinish()
                 }
@@ -168,8 +182,8 @@ fun SummonScreen(
                     style = MaterialTheme.typography.bodyLarge
                 )
                 
-                // Show responses for initiator
-                if (isInitiator && summon != null) {
+                // Show responses for everyone
+                if (summon != null) {
                     Spacer(modifier = Modifier.height(24.dp))
                     ResponseStatusList(summon!!)
                 }
@@ -278,8 +292,9 @@ fun ResponseStatusList(summon: Summon) {
                     )
                 }
                 Spacer(modifier = Modifier.width(8.dp))
+                // Hide User ID for release
                 Text(
-                    text = userId.take(8) + "...",
+                    text = "Member", 
                     color = Color.White.copy(alpha = 0.7f),
                     fontSize = 14.sp
                 )

@@ -16,9 +16,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import com.example.tripglide.ui.theme.TripGlideTheme
 
+import android.media.MediaPlayer
+
 private const val TAG = "SummonActivity"
 
 class SummonActivity : ComponentActivity() {
+
+    private var mediaPlayer: MediaPlayer? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -96,7 +100,13 @@ class SummonActivity : ComponentActivity() {
             PowerManager.FULL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.ON_AFTER_RELEASE,
             "TripGlide:SummonWakeLock"
         )
-        wakeLock.acquire(30 * 1000L /*30 seconds*/)
-        Log.d(TAG, "⚡ WakeLock acquired for 30s")
+        wakeLock.acquire(60 * 1000L /*60 seconds*/)
+        Log.d(TAG, "⚡ WakeLock acquired for 60s")
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        mediaPlayer?.release()
+        mediaPlayer = null
     }
 }

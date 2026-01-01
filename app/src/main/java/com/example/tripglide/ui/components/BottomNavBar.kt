@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
@@ -54,16 +55,22 @@ fun BottomNavBar(
                 onClick = { onTabSelected(1) }
             )
             NavBarItem(
-                icon = Icons.Default.Favorite, // Friends
-                description = "Friends",
+                icon = Icons.Default.Email, // Messages
+                description = "Messages",
                 isSelected = currentTab == 2,
                 onClick = { onTabSelected(2) }
             )
             NavBarItem(
-                icon = Icons.Default.Person, // Profile
-                description = "Profile",
+                icon = Icons.Default.Favorite, // Friends
+                description = "Friends",
                 isSelected = currentTab == 3,
                 onClick = { onTabSelected(3) }
+            )
+            NavBarItem(
+                icon = Icons.Default.Person, // Profile
+                description = "Profile",
+                isSelected = currentTab == 4,
+                onClick = { onTabSelected(4) }
             )
         }
     }
