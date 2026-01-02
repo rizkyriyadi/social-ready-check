@@ -5,6 +5,7 @@ import com.example.tripglide.data.model.AuditLog
 import com.example.tripglide.data.model.ChatMessage
 import com.example.tripglide.data.model.Circle
 import com.example.tripglide.data.model.CircleMember
+import com.example.tripglide.data.model.MemberInfo
 import com.example.tripglide.data.model.MemberRole
 import com.example.tripglide.data.model.MessageType
 import com.example.tripglide.data.model.Summon
@@ -577,16 +578,45 @@ class CircleRepositoryImpl @Inject constructor(
             }
             Log.d(TAG, "👤 User: ${user.displayName}")
 
+            // Fetch circle to get member IDs first (outside transaction for reads)
+            val circleDoc = circlesCollection.document(circleId).get().await()
+            val circle = circleDoc.toObject(Circle::class.java)
+                ?: return Result.failure(Exception("Circle not found"))
+            
+            // Build member info map from members subcollection
+            val memberInfoMap = mutableMapOf<String, MemberInfo>()
+            val initialResponses = mutableMapOf<String, String>()
+            
+            circle.memberIds.forEach { memberId ->
+                val memberDoc = circlesCollection.document(circleId)
+                    .collection("members").document(memberId).get().await()
+                val member = memberDoc.toObject(CircleMember::class.java)
+                if (member != null) {
+                    memberInfoMap[memberId] = MemberInfo(
+                        displayName = member.displayName,
+                        photoUrl = member.photoUrl
+                    )
+                }
+                // Initialize all members as PENDING, except initiator who is ACCEPTED
+                initialResponses[memberId] = if (memberId == currentUserId) {
+                    SummonResponseStatus.ACCEPTED.name
+                } else {
+                    SummonResponseStatus.PENDING.name
+                }
+            }
+            
+            Log.d(TAG, "📊 Member info loaded: ${memberInfoMap.size} members")
+
             val summonId = firestore.runTransaction { transaction ->
                 Log.d(TAG, "🔄 Starting Firestore transaction...")
                 val circleRef = circlesCollection.document(circleId)
                 val circleSnapshot = transaction.get(circleRef)
-                val circle = circleSnapshot.toObject(Circle::class.java)
+                val circleData = circleSnapshot.toObject(Circle::class.java)
                     ?: throw Exception("Circle not found")
                 
-                Log.d(TAG, "📦 Circle found: ${circle.name}, activeSummonId: ${circle.activeSummonId}")
+                Log.d(TAG, "📦 Circle found: ${circleData.name}, activeSummonId: ${circleData.activeSummonId}")
 
-                if (circle.activeSummonId != null) {
+                if (circleData.activeSummonId != null) {
                     Log.e(TAG, "⚠️ Summon already active!")
                     throw Exception("Summon already active!")
                 }
@@ -594,17 +624,23 @@ class CircleRepositoryImpl @Inject constructor(
                 val newSummonRef = circleRef.collection("summons").document()
                 Log.d(TAG, "📝 Creating summon doc: ${newSummonRef.id}")
                 
-                val summon = Summon(
-                    id = newSummonRef.id,
-                    initiatorId = currentUserId,
-                    initiatorName = user.displayName,
-                    initiatorPhotoUrl = user.photoUrl,
-                    createdAt = null, // @ServerTimestamp will populate this
-                    status = SummonStatus.PENDING.name,
-                    responses = mapOf(currentUserId to SummonResponseStatus.ACCEPTED.name) // Initiator auto-accepts
+                // Create summon with all member info for UI
+                // Note: Don't include 'id' field - @DocumentId annotation populates it automatically
+                val summonData = hashMapOf(
+                    "initiatorId" to currentUserId,
+                    "initiatorName" to user.displayName,
+                    "initiatorPhotoUrl" to user.photoUrl,
+                    "createdAt" to FieldValue.serverTimestamp(),
+                    "status" to SummonStatus.PENDING.name,
+                    "responses" to initialResponses,
+                    "circleName" to circleData.name,
+                    "circleImageUrl" to circleData.imageUrl,
+                    "memberInfoMap" to memberInfoMap.mapValues { (_, info) ->
+                        mapOf("displayName" to info.displayName, "photoUrl" to info.photoUrl)
+                    }
                 )
 
-                transaction.set(newSummonRef, summon)
+                transaction.set(newSummonRef, summonData)
                 transaction.update(circleRef, "activeSummonId", newSummonRef.id)
                 
                 Log.d(TAG, "✅ Transaction complete, summonId: ${newSummonRef.id}")
@@ -647,30 +683,41 @@ class CircleRepositoryImpl @Inject constructor(
                 transaction.update(summonRef, "responses.$currentUserId", status)
                 Log.d(TAG, "📊 Updated responses: $updatedResponses")
 
-                // Check status
-                when (status) {
-                    SummonResponseStatus.DECLINED.name, SummonResponseStatus.TIMEOUT.name -> {
-                        // Fail immediately
-                        Log.d(TAG, "❌ Summon FAILED due to: $status")
+                // ===== NEW "WAIT-FOR-ALL" LOGIC =====
+                val allMemberIds = circle.memberIds
+                val totalMembers = allMemberIds.size
+                
+                // Count how many have responded (not PENDING)
+                val respondedCount = updatedResponses.count { 
+                    it.value != SummonResponseStatus.PENDING.name 
+                }
+                val acceptedCount = updatedResponses.count { 
+                    it.value == SummonResponseStatus.ACCEPTED.name 
+                }
+                val declinedOrTimeoutCount = updatedResponses.count { 
+                    it.value == SummonResponseStatus.DECLINED.name || 
+                    it.value == SummonResponseStatus.TIMEOUT.name 
+                }
+                
+                Log.d(TAG, "📊 Status check: responded=$respondedCount/$totalMembers, accepted=$acceptedCount, declined/timeout=$declinedOrTimeoutCount")
+                
+                // Only transition status when ALL have responded
+                if (respondedCount >= totalMembers) {
+                    if (acceptedCount >= totalMembers) {
+                        // All members accepted!
+                        Log.d(TAG, "🎉 All members accepted - SUMMON SUCCESS!")
+                        transaction.update(summonRef, "status", SummonStatus.SUCCESS.name)
+                        transaction.update(circleRef, "activeSummonId", null)
+                    } else {
+                        // Someone declined or timed out
+                        Log.d(TAG, "❌ Summon FAILED - not everyone accepted")
                         transaction.update(summonRef, "status", SummonStatus.FAILED.name)
                         transaction.update(circleRef, "activeSummonId", null)
                     }
-                    SummonResponseStatus.ACCEPTED.name -> {
-                        // Check if all members accepted
-                        val allMemberIds = circle.memberIds
-                        val acceptedCount = updatedResponses.count { it.value == SummonResponseStatus.ACCEPTED.name }
-                        Log.d(TAG, "✅ Accepted: $acceptedCount / ${allMemberIds.size}")
-                        
-                        if (acceptedCount >= allMemberIds.size) {
-                            Log.d(TAG, "🎉 All members accepted - SUMMON SUCCESS!")
-                            transaction.update(summonRef, "status", SummonStatus.SUCCESS.name)
-                            transaction.update(circleRef, "activeSummonId", null)
-                        }
-                    }
-                    else -> {
-                        Log.d(TAG, "⚠️ Unknown status: $status")
-                    }
+                } else {
+                    Log.d(TAG, "⏳ Waiting for more responses...")
                 }
+                
                 Unit // Return Unit from transaction
             }.await()
             Log.d(TAG, "✅ respondToSummon completed successfully")

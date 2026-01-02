@@ -9,6 +9,8 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"
+        tools:targetApi="34" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -53,9 +55,7 @@
             android:showOnLockScreen="true"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
-            android:excludeFromRecents="true"
-            android:taskAffinity=""
-            android:noHistory="true"
+            android:excludeFromRecents="false"
             android:theme="@style/Theme.TripGlide" />
         
         <service
@@ -69,6 +69,17 @@
         <receiver
             android:name=".service.NotificationReplyReceiver"
             android:exported="false" />
+        
+        <!-- Summon Foreground Service for persistent ready check -->
+        <service
+            android:name=".service.SummonForegroundService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="voip_like_summon" />
+        </service>
     </application>
 
 </manifest>

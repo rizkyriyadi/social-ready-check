@@ -33,6 +33,16 @@ data class Circle(
 )
 
 /**
+ * Member info for display in summon UI.
+ * Denormalized from user documents for real-time display without extra reads.
+ */
+@IgnoreExtraProperties
+data class MemberInfo(
+    val displayName: String = "",
+    val photoUrl: String = ""
+)
+
+/**
  * Represents a "Summon" (Ready Check) event.
  * Subcollection: circles/{circleId}/summons/{summonId}
  */
@@ -47,7 +57,11 @@ data class Summon(
     val createdAt: Timestamp? = null,
     val expiresAt: Timestamp? = null, // Usually createdAt + 30s
     val status: String = SummonStatus.PENDING.name,
-    val responses: Map<String, String> = emptyMap() // Map<UserId, ResponseStatus>
+    val responses: Map<String, String> = emptyMap(), // Map<UserId, ResponseStatus>
+    // New fields for enhanced UI
+    val circleName: String = "",           // Circle name for header display
+    val circleImageUrl: String? = null,    // Circle photo for header
+    val memberInfoMap: Map<String, MemberInfo> = emptyMap() // Map<UserId, MemberInfo> for grid display
 )
 
 enum class SummonStatus {

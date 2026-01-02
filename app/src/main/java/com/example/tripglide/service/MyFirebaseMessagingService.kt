@@ -390,6 +390,18 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         )
         wakeLock.acquire(10 * 1000L) // 10 seconds
         
+        // Start foreground service for persistence
+        SummonForegroundService.start(
+            context = this,
+            circleId = circleId,
+            summonId = summonId,
+            circleName = "Squad", // Will be updated when activity loads
+            initiatorName = initiatorName,
+            initiatorPhotoUrl = initiatorPhotoUrl,
+            isInitiator = isInitiator
+        )
+        Log.d(TAG, "📢 Foreground service started from FCM handler")
+        
         // Launch SummonActivity directly
         val intent = Intent(this, SummonActivity::class.java).apply {
             putExtra("circleId", circleId)
