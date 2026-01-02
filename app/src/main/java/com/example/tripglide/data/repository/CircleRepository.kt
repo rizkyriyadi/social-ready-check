@@ -162,4 +162,105 @@ interface CircleRepository {
      * Use this when a summon times out without proper cleanup.
      */
     suspend fun clearActiveSummon(circleId: String): Result<Unit>
+
+    // ==================== SUMMON STATISTICS ====================
+
+    /**
+     * Gets aggregated summon statistics for the "Hall of Reputation" widget.
+     * Calculates:
+     * - Warlord: User with most summons initiated
+     * - Loyal: User with highest accept rate
+     * - Ghost: User with highest timeout/decline rate
+     * 
+     * @param circleId The circle document ID
+     * @return Result containing SummonStats
+     */
+    suspend fun getSummonStats(circleId: String): Result<com.example.tripglide.data.model.SummonStats>
+
+    // ==================== POSTS (BOARD/TIMELINE) ====================
+
+    /**
+     * Gets real-time stream of posts for the circle timeline.
+     * Posts are ordered by createdAt descending (newest first).
+     * 
+     * @param circleId The circle document ID
+     * @return Flow emitting updated list of posts
+     */
+    fun getPosts(circleId: String): Flow<List<com.example.tripglide.data.model.Post>>
+
+    /**
+     * Gets posts that contain media (for gallery view).
+     * 
+     * @param circleId The circle document ID
+     * @return Flow emitting posts with media only
+     */
+    fun getMediaPosts(circleId: String): Flow<List<com.example.tripglide.data.model.Post>>
+
+    /**
+     * Creates a new post in the circle timeline.
+     * 
+     * @param circleId The circle document ID
+     * @param content Text content of the post
+     * @param mediaUrl Optional media URL (already uploaded)
+     * @param mediaType Optional media type (IMAGE/VIDEO)
+     * @return Result containing the new postId
+     */
+    suspend fun createPost(
+        circleId: String,
+        content: String,
+        mediaUrl: String? = null,
+        mediaType: String? = null
+    ): Result<String>
+
+    /**
+     * Toggles like on a post for the current user.
+     * 
+     * @param circleId The circle document ID
+     * @param postId The post document ID
+     * @param isLiking True to like, false to unlike
+     * @return Result indicating success or failure
+     */
+    suspend fun togglePostLike(circleId: String, postId: String, isLiking: Boolean): Result<Unit>
+
+    /**
+     * Deletes a post (only author can delete).
+     * 
+     * @param circleId The circle document ID
+     * @param postId The post document ID
+     * @return Result indicating success or failure
+     */
+    suspend fun deletePost(circleId: String, postId: String): Result<Unit>
+
+    // ==================== COMMENTS ====================
+
+    /**
+     * Gets real-time stream of comments for a post.
+     * Comments are ordered by createdAt ascending (oldest first).
+     * 
+     * @param circleId The circle document ID
+     * @param postId The post document ID
+     * @return Flow emitting updated list of comments
+     */
+    fun getComments(circleId: String, postId: String): Flow<List<com.example.tripglide.data.model.PostComment>>
+
+    /**
+     * Adds a comment to a post.
+     * 
+     * @param circleId The circle document ID
+     * @param postId The post document ID
+     * @param content Comment text
+     * @return Result containing the new commentId
+     */
+    suspend fun addComment(circleId: String, postId: String, content: String): Result<String>
+
+    /**
+     * Deletes a comment (only author can delete).
+     * 
+     * @param circleId The circle document ID
+     * @param postId The post document ID
+     * @param commentId The comment document ID
+     * @return Result indicating success or failure
+     */
+    suspend fun deleteComment(circleId: String, postId: String, commentId: String): Result<Unit>
 }
+

@@ -776,6 +776,334 @@ class CircleRepositoryImpl @Inject constructor(
         }
     }
 
+    // ==================== SUMMON STATISTICS ====================
+
+    override suspend fun getSummonStats(circleId: String): Result<com.example.tripglide.data.model.SummonStats> {
+        Log.d(TAG, "📊 getSummonStats for circle: $circleId")
+        return try {
+            // Fetch all summons for this circle
+            val summonsSnapshot = circlesCollection.document(circleId)
+                .collection("summons")
+                .get()
+                .await()
+            
+            val summons = summonsSnapshot.documents.mapNotNull { it.toObject(Summon::class.java) }
+            Log.d(TAG, "📦 Found ${summons.size} summons")
+            
+            if (summons.isEmpty()) {
+                return Result.success(com.example.tripglide.data.model.SummonStats())
+            }
+            
+            // Calculate initiator counts (for Warlord)
+            val initiatorCounts = mutableMapOf<String, Int>()
+            // Track response stats per user
+            val userAcceptCounts = mutableMapOf<String, Int>()
+            val userTotalCounts = mutableMapOf<String, Int>()
+            val userDeclineTimeoutCounts = mutableMapOf<String, Int>()
+            
+            summons.forEach { summon ->
+                // Count initiations
+                initiatorCounts[summon.initiatorId] = 
+                    (initiatorCounts[summon.initiatorId] ?: 0) + 1
+                
+                // Count responses
+                summon.responses.forEach { (userId, response) ->
+                    userTotalCounts[userId] = (userTotalCounts[userId] ?: 0) + 1
+                    when (response) {
+                        SummonResponseStatus.ACCEPTED.name -> {
+                            userAcceptCounts[userId] = (userAcceptCounts[userId] ?: 0) + 1
+                        }
+                        SummonResponseStatus.DECLINED.name, SummonResponseStatus.TIMEOUT.name -> {
+                            userDeclineTimeoutCounts[userId] = (userDeclineTimeoutCounts[userId] ?: 0) + 1
+                        }
+                    }
+                }
+            }
+            
+            // Find Warlord (most summons initiated)
+            val warlordEntry = initiatorCounts.maxByOrNull { it.value }
+            val warlord = warlordEntry?.let { (userId, count) ->
+                val memberDoc = circlesCollection.document(circleId)
+                    .collection("members").document(userId).get().await()
+                val member = memberDoc.toObject(CircleMember::class.java)
+                com.example.tripglide.data.model.SummonLeaderInfo(
+                    userId = userId,
+                    displayName = member?.displayName ?: "Unknown",
+                    photoUrl = member?.photoUrl ?: "",
+                    value = count,
+                    isPercentage = false
+                )
+            }
+            
+            // Find Loyal (highest accept rate, min 3 responses)
+            val acceptRates = userTotalCounts.filter { it.value >= 3 }.mapValues { (userId, total) ->
+                val accepts = userAcceptCounts[userId] ?: 0
+                (accepts * 100) / total
+            }
+            val loyalEntry = acceptRates.maxByOrNull { it.value }
+            val loyal = loyalEntry?.let { (userId, rate) ->
+                val memberDoc = circlesCollection.document(circleId)
+                    .collection("members").document(userId).get().await()
+                val member = memberDoc.toObject(CircleMember::class.java)
+                com.example.tripglide.data.model.SummonLeaderInfo(
+                    userId = userId,
+                    displayName = member?.displayName ?: "Unknown",
+                    photoUrl = member?.photoUrl ?: "",
+                    value = rate,
+                    isPercentage = true
+                )
+            }
+            
+            // Find Ghost (highest decline/timeout rate, min 3 responses)
+            val ghostRates = userTotalCounts.filter { it.value >= 3 }.mapValues { (userId, total) ->
+                val declines = userDeclineTimeoutCounts[userId] ?: 0
+                (declines * 100) / total
+            }
+            val ghostEntry = ghostRates.maxByOrNull { it.value }
+            val ghost = ghostEntry?.let { (userId, rate) ->
+                val memberDoc = circlesCollection.document(circleId)
+                    .collection("members").document(userId).get().await()
+                val member = memberDoc.toObject(CircleMember::class.java)
+                com.example.tripglide.data.model.SummonLeaderInfo(
+                    userId = userId,
+                    displayName = member?.displayName ?: "Unknown",
+                    photoUrl = member?.photoUrl ?: "",
+                    value = rate,
+                    isPercentage = true
+                )
+            }
+            
+            Log.d(TAG, "✅ Stats calculated - Warlord: ${warlord?.displayName}, Loyal: ${loyal?.displayName}, Ghost: ${ghost?.displayName}")
+            Result.success(com.example.tripglide.data.model.SummonStats(
+                warlord = warlord,
+                loyal = loyal,
+                ghost = ghost
+            ))
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ getSummonStats failed: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    // ==================== POSTS (BOARD/TIMELINE) ====================
+
+    override fun getPosts(circleId: String): Flow<List<com.example.tripglide.data.model.Post>> = callbackFlow {
+        val listener = circlesCollection.document(circleId)
+            .collection("posts")
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .limit(50)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                val posts = snapshot?.documents?.mapNotNull { doc ->
+                    doc.toObject(com.example.tripglide.data.model.Post::class.java)
+                } ?: emptyList()
+                trySend(posts)
+            }
+        awaitClose { listener.remove() }
+    }
+
+    override fun getMediaPosts(circleId: String): Flow<List<com.example.tripglide.data.model.Post>> = callbackFlow {
+        // Simplified query - fetch all posts and filter client-side to avoid composite index requirement
+        // The whereNotEqualTo + orderBy requires a composite index that may not exist yet
+        val listener = circlesCollection.document(circleId)
+            .collection("posts")
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .limit(100)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "❌ getMediaPosts error: ${error.message}")
+                    // Don't crash - just send empty list
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                val posts = snapshot?.documents?.mapNotNull { doc ->
+                    doc.toObject(com.example.tripglide.data.model.Post::class.java)
+                }?.filter { it.hasMedia() } ?: emptyList()
+                trySend(posts)
+            }
+        awaitClose { listener.remove() }
+    }
+
+    override suspend fun createPost(
+        circleId: String,
+        content: String,
+        mediaUrl: String?,
+        mediaType: String?
+    ): Result<String> {
+        val currentUserId = getCurrentUserId()
+            ?: return Result.failure(Exception("Not logged in"))
+        
+        return try {
+            val userDoc = firestore.collection("users").document(currentUserId).get().await()
+            val user = userDoc.toObject(User::class.java)
+                ?: return Result.failure(Exception("User not found"))
+            
+            val postRef = circlesCollection.document(circleId).collection("posts").document()
+            
+            val postData = hashMapOf(
+                "authorId" to currentUserId,
+                "authorName" to user.displayName,
+                "authorPhotoUrl" to user.photoUrl,
+                "content" to content,
+                "mediaUrl" to mediaUrl,
+                "mediaType" to mediaType,
+                "likeCount" to 0,
+                "commentCount" to 0,
+                "likedBy" to emptyList<String>(),
+                "createdAt" to FieldValue.serverTimestamp(),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            
+            postRef.set(postData).await()
+            Log.d(TAG, "✅ Post created: ${postRef.id}")
+            Result.success(postRef.id)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ createPost failed: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun togglePostLike(circleId: String, postId: String, isLiking: Boolean): Result<Unit> {
+        val currentUserId = getCurrentUserId()
+            ?: return Result.failure(Exception("Not logged in"))
+        
+        return try {
+            val postRef = circlesCollection.document(circleId).collection("posts").document(postId)
+            
+            if (isLiking) {
+                postRef.update(
+                    "likedBy", FieldValue.arrayUnion(currentUserId),
+                    "likeCount", FieldValue.increment(1)
+                ).await()
+            } else {
+                postRef.update(
+                    "likedBy", FieldValue.arrayRemove(currentUserId),
+                    "likeCount", FieldValue.increment(-1)
+                ).await()
+            }
+            
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ togglePostLike failed: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun deletePost(circleId: String, postId: String): Result<Unit> {
+        val currentUserId = getCurrentUserId()
+            ?: return Result.failure(Exception("Not logged in"))
+        
+        return try {
+            val postRef = circlesCollection.document(circleId).collection("posts").document(postId)
+            val postDoc = postRef.get().await()
+            val post = postDoc.toObject(com.example.tripglide.data.model.Post::class.java)
+                ?: return Result.failure(Exception("Post not found"))
+            
+            if (post.authorId != currentUserId) {
+                return Result.failure(Exception("Not authorized to delete this post"))
+            }
+            
+            postRef.delete().await()
+            Log.d(TAG, "✅ Post deleted: $postId")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ deletePost failed: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    // ==================== COMMENTS ====================
+
+    override fun getComments(circleId: String, postId: String): Flow<List<com.example.tripglide.data.model.PostComment>> = callbackFlow {
+        val listener = circlesCollection.document(circleId)
+            .collection("posts")
+            .document(postId)
+            .collection("comments")
+            .orderBy("createdAt", Query.Direction.ASCENDING)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                val comments = snapshot?.documents?.mapNotNull { doc ->
+                    doc.toObject(com.example.tripglide.data.model.PostComment::class.java)
+                } ?: emptyList()
+                trySend(comments)
+            }
+        awaitClose { listener.remove() }
+    }
+
+    override suspend fun addComment(circleId: String, postId: String, content: String): Result<String> {
+        val currentUserId = getCurrentUserId()
+            ?: return Result.failure(Exception("Not logged in"))
+        
+        return try {
+            val userDoc = firestore.collection("users").document(currentUserId).get().await()
+            val user = userDoc.toObject(User::class.java)
+                ?: return Result.failure(Exception("User not found"))
+            
+            firestore.runTransaction { transaction ->
+                val postRef = circlesCollection.document(circleId).collection("posts").document(postId)
+                val commentRef = postRef.collection("comments").document()
+                
+                val commentData = hashMapOf(
+                    "authorId" to currentUserId,
+                    "authorName" to user.displayName,
+                    "authorPhotoUrl" to user.photoUrl,
+                    "content" to content,
+                    "createdAt" to FieldValue.serverTimestamp()
+                )
+                
+                transaction.set(commentRef, commentData)
+                transaction.update(postRef, "commentCount", FieldValue.increment(1))
+                
+                commentRef.id
+            }.await()
+            
+            Log.d(TAG, "✅ Comment added to post: $postId")
+            Result.success(postId)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ addComment failed: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun deleteComment(circleId: String, postId: String, commentId: String): Result<Unit> {
+        val currentUserId = getCurrentUserId()
+            ?: return Result.failure(Exception("Not logged in"))
+        
+        return try {
+            val commentRef = circlesCollection.document(circleId)
+                .collection("posts")
+                .document(postId)
+                .collection("comments")
+                .document(commentId)
+            
+            val commentDoc = commentRef.get().await()
+            val comment = commentDoc.toObject(com.example.tripglide.data.model.PostComment::class.java)
+                ?: return Result.failure(Exception("Comment not found"))
+            
+            if (comment.authorId != currentUserId) {
+                return Result.failure(Exception("Not authorized to delete this comment"))
+            }
+            
+            firestore.runTransaction { transaction ->
+                val postRef = circlesCollection.document(circleId).collection("posts").document(postId)
+                transaction.delete(commentRef)
+                transaction.update(postRef, "commentCount", FieldValue.increment(-1))
+            }.await()
+            
+            Log.d(TAG, "✅ Comment deleted: $commentId")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ deleteComment failed: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
     /**
      * Generates a unique 6-character alphanumeric invite code.
      */
@@ -786,3 +1114,4 @@ class CircleRepositoryImpl @Inject constructor(
             .joinToString("")
     }
 }
+

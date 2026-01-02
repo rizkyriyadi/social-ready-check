@@ -116,7 +116,36 @@ service cloud.firestore {
         allow read: if isCircleMember(circleId);
         allow write: if isAuthenticated() && request.auth.uid == userId;
       }
+
+      // Posts Subcollection (Board/Timeline)
+      match /posts/{postId} {
+        // Members can read all posts
+        allow read: if isCircleMember(circleId);
+        
+        // Members can create posts (author must match)
+        allow create: if isCircleMember(circleId) && 
+                      request.resource.data.authorId == request.auth.uid;
+        
+        // Members can update posts (for likes)
+        allow update: if isCircleMember(circleId);
+        
+        // Only author can delete their posts
+        allow delete: if isCircleMember(circleId) && 
+                      resource.data.authorId == request.auth.uid;
+
+        // Comments Subcollection
+        match /comments/{commentId} {
+          allow read: if isCircleMember(circleId);
+          
+          allow create: if isCircleMember(circleId) && 
+                        request.resource.data.authorId == request.auth.uid;
+          
+          allow delete: if isCircleMember(circleId) && 
+                        resource.data.authorId == request.auth.uid;
+        }
+      }
     }
+
 
     // --- Direct Messages (Chats) ---
     // Channel ID format: min(uid1, uid2)_max(uid1, uid2)

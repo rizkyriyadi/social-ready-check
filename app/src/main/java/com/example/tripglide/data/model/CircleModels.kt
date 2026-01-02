@@ -174,3 +174,84 @@ data class ChatMessage(
     val createdAt: Timestamp? = null,
     val metadata: Map<String, Any>? = null // Extra data (e.g., summon responses)
 )
+
+// ==================== BOARD / TIMELINE MODELS ====================
+
+/**
+ * Post in the social feed/timeline (Board Tab)
+ * 
+ * Firestore path: circles/{circleId}/posts/{postId}
+ */
+@IgnoreExtraProperties
+data class Post(
+    @DocumentId
+    val id: String = "",
+    val authorId: String = "",
+    val authorName: String = "",
+    val authorPhotoUrl: String = "",
+    val content: String = "",
+    val mediaUrl: String? = null,
+    val mediaType: String? = null, // IMAGE, VIDEO
+    val thumbnailUrl: String? = null, // For video thumbnails
+    val mediaWidth: Int? = null,
+    val mediaHeight: Int? = null,
+    val likeCount: Int = 0,
+    val commentCount: Int = 0,
+    val likedBy: List<String> = emptyList(),
+    @ServerTimestamp
+    val createdAt: Timestamp? = null,
+    @ServerTimestamp
+    val updatedAt: Timestamp? = null
+) {
+    fun isLikedBy(userId: String): Boolean = likedBy.contains(userId)
+    fun hasMedia(): Boolean = !mediaUrl.isNullOrBlank()
+    fun isImage(): Boolean = mediaType == PostMediaType.IMAGE.name
+    fun isVideo(): Boolean = mediaType == PostMediaType.VIDEO.name
+}
+
+/**
+ * Media types for posts
+ */
+enum class PostMediaType {
+    IMAGE,
+    VIDEO
+}
+
+/**
+ * Comment on a post
+ * 
+ * Firestore path: circles/{circleId}/posts/{postId}/comments/{commentId}
+ */
+@IgnoreExtraProperties
+data class PostComment(
+    @DocumentId
+    val id: String = "",
+    val authorId: String = "",
+    val authorName: String = "",
+    val authorPhotoUrl: String = "",
+    val content: String = "",
+    @ServerTimestamp
+    val createdAt: Timestamp? = null
+)
+
+// ==================== HALL OF REPUTATION MODELS ====================
+
+/**
+ * Aggregated summon statistics for "Hall of Reputation" widget
+ */
+data class SummonStats(
+    val warlord: SummonLeaderInfo? = null,  // 👑 Most summons initiated
+    val loyal: SummonLeaderInfo? = null,    // 🛡️ Highest accept rate
+    val ghost: SummonLeaderInfo? = null     // 👻 Highest timeout/decline rate
+)
+
+/**
+ * Leader info for a specific reputation stat
+ */
+data class SummonLeaderInfo(
+    val userId: String = "",
+    val displayName: String = "",
+    val photoUrl: String = "",
+    val value: Int = 0,         // Count or percentage (0-100)
+    val isPercentage: Boolean = false
+)
