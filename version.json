@@ -1,7 +1,7 @@
 {
-  "versionCode": 4,
-  "versionName": "1.2.1",
-  "releaseNotes": "- Fixed DM infinite loading issue\n- New app launcher icon\n- Dota 2 logo in menu\n- Summon sound (No Surprises - Radiohead)\n- OTA update system via Settings\n- Signed APK with keystore",
-  "downloadUrl": "https://github.com/rizkyriyadi/social-ready-check/releases/download/v1.2.1/jack-and-mei-v1.2.1-signed.apk",
+  "versionCode": 5,
+  "versionName": "2.1.0",
+  "releaseNotes": "🎮 Gamer Basecamp Social Hub\n- New 3-tab layout: HQ, Chat, Board\n- Hall of Reputation stats (Warlord, Loyal, Ghost)\n- Social feed with posts, likes, comments\n- Gallery view for media posts\n- Dota rank visuals on member cards\n- Fixed Firestore index crash",
+  "downloadUrl": "https://raw.githubusercontent.com/rizkyriyadi/social-ready-check/main/app-release.apk",
   "forceUpdate": false
 }
